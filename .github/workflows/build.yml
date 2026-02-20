@@ -1,13 +1,14 @@
-name: Build and Push
+name: Build & Push
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  SERVICE: astro-playground
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -54,9 +55,9 @@ jobs:
           context: .
           file: Dockerfile
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=ghcr.io/astromode-ai/astro-playground,push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=astro-playground-${{ env.PLATFORM_PAIR }}
-          cache-to: type=gha,mode=max,scope=astro-playground-${{ env.PLATFORM_PAIR }}
+          outputs: type=image,name=ghcr.io/astromode-ai/${{ env.SERVICE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ env.SERVICE }}-${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=${{ env.SERVICE }}-${{ env.PLATFORM_PAIR }}
 
       - name: Export digest
         run: |
@@ -104,7 +105,7 @@ jobs:
       - name: Create manifest and push
         working-directory: ${{ runner.temp }}/digests
         run: |
-          IMAGE="ghcr.io/astromode-ai/astro-playground"
+          IMAGE="ghcr.io/astromode-ai/${{ env.SERVICE }}"
           docker buildx imagetools create \
             -t "$IMAGE:${{ github.sha }}" \
             -t "$IMAGE:latest" \

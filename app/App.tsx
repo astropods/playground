@@ -817,6 +817,13 @@ export default function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
+  // Focus textarea on load and when switching to chat view
+  useEffect(() => {
+    if (viewMode !== "config") {
+      inputRef.current?.focus();
+    }
+  }, [viewMode]);
+
   // Health check for connection
   const checkConnection = useCallback(async () => {
     try {

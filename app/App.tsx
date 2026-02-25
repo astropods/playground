@@ -37,6 +37,8 @@ import dagre from "@dagrejs/dagre";
 import "@xyflow/react/dist/style.css";
 import astroLogo from "./astro-logo.svg";
 import astroLogoDark from "./astro-logo-dark.svg";
+import playgroundIllustration from "./playground-empty-state.svg";
+import playgroundIllustrationDark from "./playground-empty-state-dark.svg";
 
 // Runtime config from window.__ENV__ (injected by nginx) or Vite env or default
 declare global {
@@ -778,11 +780,11 @@ function EmptyState() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
       <div className="mb-6">
-        <img src={astroLogo} alt="Astro" className="h-8 dark:hidden" />
-        <img src={astroLogoDark} alt="Astro" className="hidden h-8 dark:block" />
+        <img src={playgroundIllustration} alt="" className="h-16 dark:hidden" />
+        <img src={playgroundIllustrationDark} alt="" className="hidden h-16 dark:block" />
       </div>
       <h2 className="text-2xl font-semibold text-foreground mb-2">
-        Agents Playground
+        Agent Playground
       </h2>
       <p className="text-muted-foreground max-w-md">
         Test and interact with your AI agent. Send a message below to start a
@@ -1146,8 +1148,8 @@ export default function App() {
       ) : (
         <>
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-6 py-6">
-            <div className="max-w-4xl mx-auto">
+          <div className="flex-1 flex flex-col overflow-y-auto px-6 py-6">
+            <div className={`max-w-4xl mx-auto w-full${messages.length === 0 ? " flex-1 flex flex-col" : ""}`}>
               {messages.length === 0 ? (
                 <EmptyState />
               ) : (

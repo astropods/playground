@@ -1129,13 +1129,15 @@ export default function App() {
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
       <header className="shrink-0 px-6 py-4 border-b border-border bg-card/50 backdrop-blur-sm relative z-10">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+        <div className="max-w-4xl mx-auto grid grid-cols-3 items-center">
           <div className="flex items-center gap-3">
             <img src={astroLogo} alt="Astro" className="h-5 dark:hidden" />
             <img src={astroLogoDark} alt="Astro" className="hidden h-5 dark:block" />
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center">
             <ViewToggle viewMode={viewMode} onToggle={setViewMode} />
+          </div>
+          <div className="flex items-center justify-end">
             <ThemeToggle />
           </div>
         </div>

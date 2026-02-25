@@ -1,4 +1,4 @@
-# astro-playground
+# Astro Playground
 
 A web UI for testing and interacting with AI agents powered by [astro-messaging](https://github.com/astropods/messaging).
 

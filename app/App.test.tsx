@@ -99,12 +99,12 @@ describe("Connection error", () => {
 // Empty state
 // ---------------------------------------------------------------------------
 describe("Empty state", () => {
-  it("shows 'Agents Playground' heading and prompt text", async () => {
+  it("shows 'Agent Playground' heading and prompt text", async () => {
     mockFetch();
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
     expect(
       screen.getByText(/Send a message below to start a conversation/),
@@ -121,7 +121,7 @@ describe("Header", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
 
     // Logos (there are two in the header + two in EmptyState)
@@ -149,11 +149,11 @@ describe("ViewToggle", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
 
     // Chat view is showing (empty state visible)
-    expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+    expect(screen.getByText("Agent Playground")).toBeInTheDocument();
 
     // Switch to Config
     await user.click(screen.getByText("Config"));
@@ -174,7 +174,7 @@ describe("ThemeToggle", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
 
     const toggle = screen.getByTitle(/Switch to dark mode|Switch to light mode/);
@@ -198,7 +198,7 @@ describe("ModelSelector", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
 
     // Default model visible
@@ -219,7 +219,7 @@ describe("ModelSelector", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
 
     await user.click(screen.getByText("GPT-5.2"));
@@ -248,7 +248,7 @@ describe("Chat input", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
 
     const textarea = screen.getByPlaceholderText("Send a message...");
@@ -267,7 +267,7 @@ describe("Chat input", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
 
     const textarea = screen.getByPlaceholderText("Send a message...");
@@ -291,7 +291,7 @@ async function renderAndSendMessage(text = "Hello agent") {
   render(<App />);
 
   await waitFor(() => {
-    expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+    expect(screen.getByText("Agent Playground")).toBeInTheDocument();
   });
 
   const textarea = screen.getByPlaceholderText("Send a message...");
@@ -326,7 +326,7 @@ describe("Config view content", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
 
     await user.click(screen.getByText("Config"));
@@ -349,7 +349,7 @@ describe("Config view content", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
 
     await user.click(screen.getByText("Config"));
@@ -503,7 +503,7 @@ describe("Keyboard shortcuts", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
 
     const textarea = screen.getByPlaceholderText("Send a message...");
@@ -522,7 +522,7 @@ describe("Keyboard shortcuts", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
 
     const textarea = screen.getByPlaceholderText("Send a message...");
@@ -547,7 +547,7 @@ describe("Error states during messaging", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
 
     const textarea = screen.getByPlaceholderText("Send a message...");
@@ -568,7 +568,7 @@ describe("Error states during messaging", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
 
     const textarea = screen.getByPlaceholderText("Send a message...");
@@ -593,7 +593,7 @@ describe("Theme localStorage persistence", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Agents Playground")).toBeInTheDocument();
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
 
     const toggle = screen.getByTitle(/Switch to dark mode|Switch to light mode/);

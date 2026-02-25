@@ -342,7 +342,7 @@ function ThemeToggle() {
   return (
     <button
       onClick={toggle}
-      className="flex items-center justify-center w-9 h-9 rounded-lg border border-border hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+      className="flex items-center justify-center w-9 h-9 rounded-md border border-border hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
       title={isDark ? "Switch to light mode" : "Switch to dark mode"}
     >
       {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}

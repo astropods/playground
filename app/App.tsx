@@ -302,10 +302,10 @@ function ViewToggle({
   onToggle: (mode: ViewMode) => void;
 }) {
   return (
-    <div className="flex items-center bg-muted rounded-lg p-1 border border-border">
+    <div className="flex items-center bg-muted rounded-md p-1 border border-border">
       <button
         onClick={() => onToggle("chat")}
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${viewMode === "chat"
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-sm text-sm font-medium transition-all duration-200 ${viewMode === "chat"
           ? "bg-primary text-primary-foreground shadow-sm"
           : "text-muted-foreground hover:text-foreground"
           }`}
@@ -315,7 +315,7 @@ function ViewToggle({
       </button>
       <button
         onClick={() => onToggle("config")}
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${viewMode === "config"
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-sm text-sm font-medium transition-all duration-200 ${viewMode === "config"
           ? "bg-primary text-primary-foreground shadow-sm"
           : "text-muted-foreground hover:text-foreground"
           }`}

@@ -555,35 +555,6 @@ pre,
   margin: 1em 0;
 }
 
-/* User message markdown (lighter text on primary background) */
-.markdown-content-user code {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.markdown-content-user pre {
-  background: rgba(0, 0, 0, 0.25);
-}
-
-.markdown-content-user a {
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.markdown-content-user a:hover {
-  color: #ffffff;
-}
-
-.markdown-content-user blockquote {
-  border-left-color: rgba(255, 255, 255, 0.4);
-  background: rgba(0, 0, 0, 0.15);
-}
-
-.markdown-content-user th {
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.markdown-content-user tr:nth-child(even) {
-  background: rgba(0, 0, 0, 0.1);
-}
 
 /* React Flow custom styles */
 .react-flow__handle {

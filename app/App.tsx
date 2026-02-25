@@ -1,8 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Send,
-  Bot,
-  User,
   Loader2,
   ChevronDown,
   ChevronRight,
@@ -591,7 +589,7 @@ function AgentConfigView({
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="max-w-3xl mx-auto space-y-6">
         {/* System Prompt Section */}
         <div className="bg-muted border border-border rounded-xl overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-3 bg-card border-b border-border">
@@ -717,18 +715,6 @@ function ChatMessage({ message }: { message: Message }) {
     <div
       className={`flex gap-3 animate-fade-in ${isUser ? "flex-row-reverse" : ""}`}
     >
-      <div
-        className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isUser
-          ? "bg-primary-600 dark:bg-primary-500"
-          : "bg-primary"
-          }`}
-      >
-        {isUser ? (
-          <User className="w-4 h-4 text-white" />
-        ) : (
-          <Bot className="w-4 h-4 text-primary-foreground" />
-        )}
-      </div>
       <div className={`flex-1 max-w-[80%] ${isUser ? "flex flex-col items-end" : ""}`}>
         {message.reasoning && (
           <LiveReasoning
@@ -751,12 +737,12 @@ function ChatMessage({ message }: { message: Message }) {
 
         {hasContent && (
           <div
-            className={`px-4 py-3 rounded-2xl ${isUser
-              ? "bg-primary text-primary-foreground"
-              : "bg-card border border-border"
+            className={`px-4 py-3 rounded-md ${isUser
+              ? "bg-stone-200 dark:bg-stone-800 text-foreground"
+              : "bg-card"
               }`}
           >
-            <div className={`markdown-content ${isUser ? "markdown-content-user" : ""}`}>
+            <div className="markdown-content">
               <Markdown
                 components={{
                   pre: Pre,
@@ -1131,7 +1117,7 @@ export default function App() {
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
       <header className="shrink-0 px-6 py-4 border-b border-border bg-card/50 backdrop-blur-sm relative z-10">
-        <div className="max-w-4xl mx-auto grid grid-cols-3 items-center">
+        <div className="max-w-3xl mx-auto grid grid-cols-3 items-center">
           <div className="flex items-center gap-3">
             <img src={astroLogo} alt="Astro" className="h-5 dark:hidden" />
             <img src={astroLogoDark} alt="Astro" className="hidden h-5 dark:block" />
@@ -1150,8 +1136,8 @@ export default function App() {
       ) : (
         <>
           {/* Messages */}
-          <div className="flex-1 flex flex-col overflow-y-auto px-6 py-6">
-            <div className={`max-w-4xl mx-auto w-full${messages.length === 0 ? " flex-1 flex flex-col" : ""}`}>
+          <div className="flex-1 overflow-y-auto px-6 py-6">
+            <div className="max-w-3xl mx-auto">
               {messages.length === 0 ? (
                 <EmptyState />
               ) : (
@@ -1167,7 +1153,7 @@ export default function App() {
 
           {/* Input */}
           <div className="shrink-0 px-6 py-4 border-t border-border bg-card/50 backdrop-blur-sm">
-            <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
+            <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
               <div className="relative flex items-end gap-3 p-2 bg-muted rounded-2xl border border-border focus-within:border-primary transition-colors">
                 <ModelSelector
                   selectedModel={selectedModel}

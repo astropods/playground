@@ -304,10 +304,10 @@ function ViewToggle({
   onToggle: (mode: ViewMode) => void;
 }) {
   return (
-    <div className="flex items-center bg-muted rounded-lg p-1 border border-border">
+    <div className="flex items-center bg-muted rounded-md p-1 border border-border">
       <button
         onClick={() => onToggle("chat")}
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${viewMode === "chat"
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-sm text-sm font-medium transition-all duration-200 ${viewMode === "chat"
           ? "bg-primary text-primary-foreground shadow-sm"
           : "text-muted-foreground hover:text-foreground"
           }`}
@@ -317,7 +317,7 @@ function ViewToggle({
       </button>
       <button
         onClick={() => onToggle("config")}
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${viewMode === "config"
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-sm text-sm font-medium transition-all duration-200 ${viewMode === "config"
           ? "bg-primary text-primary-foreground shadow-sm"
           : "text-muted-foreground hover:text-foreground"
           }`}
@@ -344,7 +344,7 @@ function ThemeToggle() {
   return (
     <button
       onClick={toggle}
-      className="flex items-center justify-center w-9 h-9 rounded-lg border border-border hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+      className="flex items-center justify-center w-9 h-9 rounded-md border border-border hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
       title={isDark ? "Switch to light mode" : "Switch to dark mode"}
     >
       {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -1131,13 +1131,15 @@ export default function App() {
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
       <header className="shrink-0 px-6 py-4 border-b border-border bg-card/50 backdrop-blur-sm relative z-10">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+        <div className="max-w-4xl mx-auto grid grid-cols-3 items-center">
           <div className="flex items-center gap-3">
             <img src={astroLogo} alt="Astro" className="h-5 dark:hidden" />
             <img src={astroLogoDark} alt="Astro" className="hidden h-5 dark:block" />
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center">
             <ViewToggle viewMode={viewMode} onToggle={setViewMode} />
+          </div>
+          <div className="flex items-center justify-end">
             <ThemeToggle />
           </div>
         </div>

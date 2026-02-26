@@ -261,7 +261,7 @@ function ModelSelector({
     <div className="relative" ref={ref}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-2 rounded-[11px] bg-card border border-border hover:border-primary transition-all duration-200 text-sm"
+        className="flex items-center gap-2 px-3 py-2 rounded-md bg-card border border-border hover:border-primary transition-all duration-200 text-sm"
       >
         <Cpu className="w-4 h-4 text-primary" />
         <span className="text-foreground">{selected.name}</span>
@@ -271,7 +271,7 @@ function ModelSelector({
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full left-0 mb-2 py-1 bg-card border border-border rounded-[11px] shadow-xl z-50 animate-fade-in min-w-[180px] max-h-[400px] overflow-y-auto">
+        <div className="absolute bottom-full left-0 mb-2 py-1 bg-card border border-border rounded-md shadow-xl z-50 animate-fade-in min-w-[180px] max-h-[400px] overflow-y-auto">
           {AVAILABLE_MODELS.map((model, index) => {
             const prevModel = AVAILABLE_MODELS[index - 1];
             const showDivider = index > 0 && prevModel.provider !== model.provider;

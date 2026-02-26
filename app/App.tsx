@@ -283,10 +283,10 @@ function ModelSelector({
                     onSelect(model.id);
                     setIsOpen(false);
                   }}
-                  className={`w-full px-4 py-1.5 flex items-center gap-3 hover:bg-primary/10 transition-colors ${model.id === selectedModel ? "bg-primary/10" : ""}`}
+                  className={`w-full px-4 py-1.5 flex items-center gap-3 text-left hover:bg-primary/10 transition-colors ${model.id === selectedModel ? "bg-primary/10" : ""}`}
                 >
                   <Cpu className="w-4 h-4 text-primary shrink-0" />
-                  <div className="text-sm">{model.name}</div>
+                  <div className="text-sm whitespace-nowrap">{model.name}</div>
                 </button>
               </div>
             );

@@ -8,7 +8,6 @@ import {
   Brain,
   Check,
   AlertCircle,
-  Cpu,
   Copy,
   CheckCheck,
   MessageSquare,
@@ -17,6 +16,8 @@ import {
   Sun,
   Moon,
 } from "lucide-react";
+import { AiOutlineOpenAI } from "react-icons/ai";
+import { RiClaudeFill, RiGeminiFill } from "react-icons/ri";
 import Markdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -234,6 +235,13 @@ function CodeBlock({
   );
 }
 
+function ProviderIcon({ provider, className }: { provider: string; className?: string }) {
+  if (provider === "OpenAI") return <AiOutlineOpenAI className={className} />;
+  if (provider === "Anthropic") return <RiClaudeFill className={className} />;
+  if (provider === "Google") return <RiGeminiFill className={className} />;
+  return null;
+}
+
 function ModelSelector({
   selectedModel,
   onSelect,
@@ -263,7 +271,7 @@ function ModelSelector({
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 px-3 py-2 rounded-md bg-card border border-border hover:border-primary transition-all duration-200 text-sm"
       >
-        <Cpu className="w-4 h-4 text-primary" />
+        <ProviderIcon provider={selected.provider} className="w-4 h-4 text-foreground shrink-0" />
         <span className="text-foreground">{selected.name}</span>
         <ChevronDown
           className={`w-3 h-3 text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
@@ -285,8 +293,8 @@ function ModelSelector({
                   }}
                   className={`w-full px-4 py-1.5 flex items-center gap-3 text-left hover:bg-primary/10 transition-colors ${model.id === selectedModel ? "bg-primary/10" : ""}`}
                 >
-                  <Cpu className="w-4 h-4 text-primary shrink-0" />
-                  <div className="text-sm whitespace-nowrap">{model.name}</div>
+                  <ProviderIcon provider={model.provider} className="w-4 h-4 shrink-0 text-foreground" />
+                  <div className="text-sm ml-2 whitespace-nowrap">{model.name}</div>
                 </button>
               </div>
             );

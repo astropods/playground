@@ -610,7 +610,7 @@ function AgentConfigView({
             </h3>
           </div>
           <div className="p-4">
-            <p className="text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed">
+            <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
               {config.systemPrompt || "No system prompt configured"}
             </p>
           </div>
@@ -623,7 +623,7 @@ function AgentConfigView({
             <h3 className="text-sm font-medium text-foreground">
               Available Tools
             </h3>
-            <span className="ml-auto text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full font-mono">
               {config.tools.length} tool{config.tools.length !== 1 ? "s" : ""}
             </span>
           </div>

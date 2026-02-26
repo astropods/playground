@@ -694,7 +694,7 @@ function LiveReasoning({ reasoning, isStreaming }: { reasoning: string; isStream
 
 function ThinkingIndicator({ label = "Thinking" }: { label?: string }) {
   return (
-    <div className="flex items-center gap-2 px-4 py-3 bg-muted border border-border rounded-2xl">
+    <div className="flex items-center gap-2 py-1">
       <div className="flex items-center gap-1.5">
         <span
           className="w-2 h-2 bg-primary rounded-full animate-bounce"

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
-  Send,
+  ArrowUp,
   Loader2,
   ChevronDown,
   ChevronRight,
@@ -1154,11 +1154,7 @@ export default function App() {
           {/* Input */}
           <div className="shrink-0 px-6 py-4 border-t border-border bg-card/50 backdrop-blur-sm">
             <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
-              <div className="relative flex items-end gap-3 p-2 bg-muted rounded-2xl border border-border focus-within:border-primary transition-colors">
-                <ModelSelector
-                  selectedModel={selectedModel}
-                  onSelect={setSelectedModel}
-                />
+              <div className="relative flex flex-col gap-1 p-2 bg-muted rounded-[20px] border border-border focus-within:border-primary transition-colors">
                 <textarea
                   ref={inputRef}
                   value={input}
@@ -1166,26 +1162,32 @@ export default function App() {
                   onKeyDown={handleKeyDown}
                   placeholder="Send a message..."
                   rows={1}
-                  className="flex-1 bg-transparent px-3 py-2 text-foreground placeholder:text-muted-foreground resize-none outline-none text-sm min-h-[40px] max-h-[200px]"
-                  style={{ height: "40px" }}
+                  className="w-full bg-transparent px-3 py-2 text-foreground placeholder:text-muted-foreground resize-none outline-none text-sm min-h-[72px] max-h-[200px]"
+                  style={{ height: "72px" }}
                   onInput={(e) => {
                     const target = e.target as HTMLTextAreaElement;
-                    target.style.height = "40px";
+                    target.style.height = "72px";
                     target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
                   }}
                   disabled={isLoading}
                 />
-                <button
-                  type="submit"
-                  disabled={!input.trim() || isLoading}
-                  className="shrink-0 w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 transition-all duration-200"
-                >
-                  {isLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
-                </button>
+                <div className="flex items-center justify-between">
+                  <ModelSelector
+                    selectedModel={selectedModel}
+                    onSelect={setSelectedModel}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!input.trim() || isLoading}
+                    className="shrink-0 w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 transition-all duration-200"
+                  >
+                    {isLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ArrowUp className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
               </div>
               <p className="text-center text-xs text-muted-foreground mt-3">
                 Press Enter to send, Shift+Enter for new line

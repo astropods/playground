@@ -2,8 +2,8 @@
 set -e
 
 # BACKEND_URL: where nginx proxies /api and /health requests
-# Defaults to astro-messaging sidecar (used in ast dev)
-BACKEND_URL="${BACKEND_URL:-http://astro-messaging:8080}"
+# Defaults to messaging sidecar (used in ast dev)
+BACKEND_URL="${BACKEND_URL:-http://messaging:8080}"
 
 # API_URL: frontend override (empty = use relative URLs through nginx proxy)
 API_URL="${API_URL:-}"
@@ -11,9 +11,9 @@ API_URL="${API_URL:-}"
 # Build the proxy_pass block. For Docker compose (default), use resolver +
 # variable so nginx handles runtime DNS. For external URLs, use direct proxy_pass
 # which resolves via /etc/hosts at startup.
-if [ "$BACKEND_URL" = "http://astro-messaging:8080" ]; then
+if [ "$BACKEND_URL" = "http://messaging:8080" ]; then
     PROXY_BLOCK='resolver 127.0.0.11 valid=10s ipv6=off;
-        set $backend http://astro-messaging:8080;
+        set $backend http://messaging:8080;
         proxy_pass $backend'
 else
     PROXY_BLOCK="proxy_pass ${BACKEND_URL}"

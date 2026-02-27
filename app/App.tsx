@@ -801,10 +801,10 @@ function ConnectionError({ onRetry }: { onRetry: () => void }) {
         Connection Error
       </h2>
       <p className="text-muted-foreground max-w-md mb-6">
-        Unable to connect to the messaging service. Make sure astro-messaging is running with the web adapter enabled.
+        Unable to connect to the messaging service. Make sure messaging is running with the web adapter enabled.
       </p>
       <code className="px-4 py-2 bg-muted border border-border rounded-lg text-sm font-mono text-foreground/80 mb-6">
-        WEB_ENABLED=true astro-messaging
+        WEB_ENABLED=true messaging
       </code>
       <button
         onClick={onRetry}

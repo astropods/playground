@@ -1148,7 +1148,7 @@ export default function App() {
         <>
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-6 py-6">
-            <div className="max-w-3xl mx-auto">
+            <div className={`max-w-3xl mx-auto ${messages.length === 0 ? "h-full flex flex-col" : ""}`}>
               {messages.length === 0 ? (
                 <EmptyState />
               ) : (

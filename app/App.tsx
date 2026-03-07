@@ -1263,12 +1263,6 @@ export default function App() {
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
           audioChunksRef.current.push(e.data);
-          // Stream chunks over WebSocket as binary
-          if (audioWsRef.current?.readyState === WebSocket.OPEN) {
-            e.data.arrayBuffer().then((buf) => {
-              audioWsRef.current?.send(buf);
-            });
-          }
         }
       };
 
@@ -1285,6 +1279,25 @@ export default function App() {
 
   const stopRecording = async () => {
     if (!isRecording || !mediaRecorderRef.current) return;
+
+    // Stop MediaRecorder and wait for final chunks to flush
+    const recorder = mediaRecorderRef.current;
+    const chunks = await new Promise<Blob[]>((resolve) => {
+      recorder.onstop = () => resolve(audioChunksRef.current);
+      recorder.stop();
+    });
+
+    // Stop mic tracks immediately
+    recorder.stream.getTracks().forEach((t) => t.stop());
+    mediaRecorderRef.current = null;
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    setRecordingDuration(0);
+    setIsRecording(false);
+
+    if (chunks.length === 0) return;
 
     setIsLoading(true);
 
@@ -1332,17 +1345,11 @@ export default function App() {
         })
       );
 
-      // Stop the MediaRecorder; remaining chunks will be sent via ondataavailable
-      mediaRecorderRef.current.stop();
-
-      // Wait for the MediaRecorder to finish flushing
-      await new Promise<void>((resolve) => {
-        if (mediaRecorderRef.current) {
-          mediaRecorderRef.current.onstop = () => resolve();
-        } else {
-          resolve();
-        }
-      });
+      // Send all accumulated audio chunks as binary frames
+      for (const chunk of chunks) {
+        const buf = await chunk.arrayBuffer();
+        ws.send(buf);
+      }
 
       // Signal end of audio
       ws.send(JSON.stringify({ type: "audio.end" }));
@@ -1360,16 +1367,7 @@ export default function App() {
       );
       setIsLoading(false);
     } finally {
-      // Clean up recording resources (but keep WebSocket open for response)
-      mediaRecorderRef.current?.stream.getTracks().forEach((t) => t.stop());
-      mediaRecorderRef.current = null;
       audioChunksRef.current = [];
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
-      setRecordingDuration(0);
-      setIsRecording(false);
     }
   };
 

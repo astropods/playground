@@ -55,8 +55,29 @@ cat >> /etc/nginx/conf.d/default.conf <<'NGINX_MID'
         chunked_transfer_encoding off;
     }
 
-    location /health {
+    # WebSocket audio endpoint — must come before generic /api/ to match first
+    location ~ ^/api/conversations/[^/]+/audio$ {
 NGINX_MID
+
+cat >> /etc/nginx/conf.d/default.conf <<NGINX_WS_PROXY
+        ${PROXY_BLOCK};
+NGINX_WS_PROXY
+
+cat >> /etc/nginx/conf.d/default.conf <<'NGINX_WS'
+        proxy_http_version 1.1;
+        proxy_ssl_server_name on;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 86400s;
+    }
+
+    location /health {
+NGINX_WS
 
 cat >> /etc/nginx/conf.d/default.conf <<NGINX_PROXY2
         ${PROXY_BLOCK};

@@ -15,6 +15,8 @@ import {
   FileText,
   Sun,
   Moon,
+  Mic,
+  Square,
 } from "lucide-react";
 import { AiOutlineOpenAI } from "react-icons/ai";
 import { RiClaudeFill, RiGeminiFill } from "react-icons/ri";
@@ -76,6 +78,7 @@ type Message = {
   steps?: Step[];
   reasoning?: string;
   isStreaming?: boolean;
+  inputModality?: "text" | "audio";
 };
 
 type Step = {
@@ -753,6 +756,12 @@ function ChatMessage({ message }: { message: Message }) {
               : "bg-card"
               }`}
           >
+            {message.inputModality === "audio" && isUser ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Mic className="w-4 h-4" />
+                <span>Voice message</span>
+              </div>
+            ) : (
             <div className="markdown-content">
               <Markdown
                 components={{
@@ -763,6 +772,7 @@ function ChatMessage({ message }: { message: Message }) {
                 {message.content}
               </Markdown>
             </div>
+            )}
             {message.isStreaming && (
               <span className="inline-block w-2 h-4 bg-primary rounded-sm ml-1 animate-pulse-soft" />
             )}
@@ -829,6 +839,14 @@ export default function App() {
   // Conversation state for messaging API
   const [conversationId, setConversationId] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  // Audio recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioWsRef = useRef<WebSocket | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1116,6 +1134,255 @@ export default function App() {
     }
   };
 
+  const cleanupRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    mediaRecorderRef.current?.stream.getTracks().forEach((t) => t.stop());
+    mediaRecorderRef.current = null;
+    audioChunksRef.current = [];
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    setRecordingDuration(0);
+    setIsRecording(false);
+  }, []);
+
+  const setupAudioWebSocket = useCallback(
+    (convId: string, assistantMessageId: string): WebSocket => {
+      const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsBase = API_URL
+        ? API_URL.replace(/^http/, "ws")
+        : `${wsProtocol}//${window.location.host}`;
+      const ws = new WebSocket(`${wsBase}/api/conversations/${convId}/audio`);
+      audioWsRef.current = ws;
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          switch (data.type) {
+            case "chunk":
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? { ...msg, content: msg.content + (data.content || "") }
+                    : msg
+                )
+              );
+              break;
+            case "step-start":
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? {
+                        ...msg,
+                        steps: [
+                          ...(msg.steps || []),
+                          { id: data.step_id, name: data.name, type: "tool" as const, status: "running" as const },
+                        ],
+                      }
+                    : msg
+                )
+              );
+              break;
+            case "step-end":
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? {
+                        ...msg,
+                        steps: msg.steps?.map((s) =>
+                          s.id === data.step_id ? { ...s, status: "completed" as const } : s
+                        ),
+                      }
+                    : msg
+                )
+              );
+              break;
+            case "reasoning-delta":
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? { ...msg, reasoning: (msg.reasoning || "") + (data.content || "") }
+                    : msg
+                )
+              );
+              break;
+            case "finish":
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId ? { ...msg, isStreaming: false } : msg
+                )
+              );
+              setIsLoading(false);
+              break;
+            case "error":
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? { ...msg, content: `Error: ${data.message || "Unknown error"}`, isStreaming: false }
+                    : msg
+                )
+              );
+              setIsLoading(false);
+              break;
+          }
+        } catch {
+          // skip invalid JSON
+        }
+      };
+
+      ws.onerror = () => {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMessageId ? { ...msg, isStreaming: false } : msg
+          )
+        );
+        setIsLoading(false);
+      };
+
+      ws.onclose = () => {
+        audioWsRef.current = null;
+      };
+
+      return ws;
+    },
+    []
+  );
+
+  const startRecording = async () => {
+    if (isLoading || isRecording) return;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+          // Stream chunks over WebSocket as binary
+          if (audioWsRef.current?.readyState === WebSocket.OPEN) {
+            e.data.arrayBuffer().then((buf) => {
+              audioWsRef.current?.send(buf);
+            });
+          }
+        }
+      };
+
+      mediaRecorder.start(250); // collect chunks every 250ms
+      setIsRecording(true);
+      setRecordingDuration(0);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration((d) => d + 1);
+      }, 1000);
+    } catch {
+      // Mic permission denied or not available
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!isRecording || !mediaRecorderRef.current) return;
+
+    setIsLoading(true);
+
+    const userMessage: Message = {
+      id: generateId(),
+      role: "user",
+      content: "[Voice message]",
+      inputModality: "audio",
+    };
+
+    const assistantMessageId = generateId();
+    const assistantMessage: Message = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "",
+      steps: [],
+      reasoning: "",
+      isStreaming: true,
+    };
+
+    setMessages((prev) => [...prev, userMessage, assistantMessage]);
+
+    try {
+      let convId = conversationId;
+      if (!convId) {
+        convId = await createConversation();
+        setConversationId(convId);
+      }
+
+      // Open WebSocket and wait for it to be ready
+      const ws = setupAudioWebSocket(convId, assistantMessageId);
+      await new Promise<void>((resolve, reject) => {
+        ws.onopen = () => resolve();
+        ws.onerror = () => reject(new Error("WebSocket connection failed"));
+      });
+
+      // Send audio config
+      ws.send(
+        JSON.stringify({
+          type: "audio.config",
+          encoding: "webm_opus",
+          sample_rate: 48000,
+          channels: 1,
+          source: "browser",
+        })
+      );
+
+      // Stop the MediaRecorder; remaining chunks will be sent via ondataavailable
+      mediaRecorderRef.current.stop();
+
+      // Wait for the MediaRecorder to finish flushing
+      await new Promise<void>((resolve) => {
+        if (mediaRecorderRef.current) {
+          mediaRecorderRef.current.onstop = () => resolve();
+        } else {
+          resolve();
+        }
+      });
+
+      // Signal end of audio
+      ws.send(JSON.stringify({ type: "audio.end" }));
+    } catch (error) {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantMessageId
+            ? {
+                ...msg,
+                content: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+                isStreaming: false,
+              }
+            : msg
+        )
+      );
+      setIsLoading(false);
+    } finally {
+      // Clean up recording resources (but keep WebSocket open for response)
+      mediaRecorderRef.current?.stream.getTracks().forEach((t) => t.stop());
+      mediaRecorderRef.current = null;
+      audioChunksRef.current = [];
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      setRecordingDuration(0);
+      setIsRecording(false);
+    }
+  };
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      cleanupRecording();
+      if (audioWsRef.current) {
+        audioWsRef.current.close();
+      }
+    };
+  }, [cleanupRecording]);
+
   if (connectionError) {
     return (
       <div className="h-full flex flex-col bg-background">
@@ -1165,43 +1432,76 @@ export default function App() {
           {/* Input */}
           <div className="shrink-0 px-6 py-4 border-t border-border bg-card/50 backdrop-blur-sm">
             <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
-              <div className="relative flex flex-col gap-1 p-2 bg-muted rounded-[20px] border border-border focus-within:border-primary transition-colors">
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Send a message..."
-                  rows={1}
-                  className="w-full bg-transparent px-3 py-2 text-foreground placeholder:text-muted-foreground resize-none outline-none text-sm min-h-[72px] max-h-[200px]"
-                  style={{ height: "72px" }}
-                  onInput={(e) => {
-                    const target = e.target as HTMLTextAreaElement;
-                    target.style.height = "72px";
-                    target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
-                  }}
-                  disabled={isLoading}
-                />
+              <div className={`relative flex flex-col gap-1 p-2 bg-muted rounded-[20px] border transition-colors ${isRecording ? "border-red-500" : "border-border focus-within:border-primary"}`}>
+                {isRecording ? (
+                  <div className="flex items-center justify-center gap-3 px-3 py-2 min-h-[72px]">
+                    <span className="recording-pulse w-3 h-3 rounded-full bg-red-500" />
+                    <span className="text-sm text-foreground">
+                      Recording{recordingDuration > 0 ? ` — ${Math.floor(recordingDuration / 60)}:${(recordingDuration % 60).toString().padStart(2, "0")}` : "..."}
+                    </span>
+                  </div>
+                ) : (
+                  <textarea
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Send a message..."
+                    rows={1}
+                    className="w-full bg-transparent px-3 py-2 text-foreground placeholder:text-muted-foreground resize-none outline-none text-sm min-h-[72px] max-h-[200px]"
+                    style={{ height: "72px" }}
+                    onInput={(e) => {
+                      const target = e.target as HTMLTextAreaElement;
+                      target.style.height = "72px";
+                      target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
+                    }}
+                    disabled={isLoading}
+                  />
+                )}
                 <div className="flex items-center justify-between">
                   <ModelSelector
                     selectedModel={selectedModel}
                     onSelect={setSelectedModel}
                   />
-                  <button
-                    type="submit"
-                    disabled={!input.trim() || isLoading}
-                    className="shrink-0 w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 transition-all duration-200"
-                  >
-                    {isLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                  <div className="flex items-center gap-2">
+                    {isRecording ? (
+                      <button
+                        type="button"
+                        onClick={stopRecording}
+                        className="shrink-0 w-9 h-9 rounded-xl bg-red-500 flex items-center justify-center text-white hover:bg-red-600 transition-all duration-200"
+                        title="Stop recording and send"
+                      >
+                        <Square className="w-4 h-4" />
+                      </button>
                     ) : (
-                      <ArrowUp className="w-4 h-4" />
+                      <>
+                        <button
+                          type="button"
+                          onClick={startRecording}
+                          disabled={isLoading}
+                          className="shrink-0 w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                          title="Record voice message"
+                        >
+                          <Mic className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={!input.trim() || isLoading}
+                          className="shrink-0 w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 transition-all duration-200"
+                        >
+                          {isLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <ArrowUp className="w-4 h-4" />
+                          )}
+                        </button>
+                      </>
                     )}
-                  </button>
+                  </div>
                 </div>
               </div>
               <p className="text-center text-xs text-muted-foreground mt-3">
-                Press Enter to send, Shift+Enter for new line
+                {isRecording ? "Click stop to send voice message" : "Press Enter to send, Shift+Enter for new line"}
               </p>
             </form>
           </div>

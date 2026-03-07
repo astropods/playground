@@ -844,9 +844,9 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
   const audioWsRef = useRef<WebSocket | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingAssistantIdRef = useRef<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1140,7 +1140,7 @@ export default function App() {
     }
     mediaRecorderRef.current?.stream.getTracks().forEach((t) => t.stop());
     mediaRecorderRef.current = null;
-    audioChunksRef.current = [];
+    pendingAssistantIdRef.current = null;
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
@@ -1255,77 +1255,16 @@ export default function App() {
     if (isLoading || isRecording) return;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          audioChunksRef.current.push(e.data);
-        }
-      };
-
-      mediaRecorder.start(250); // collect chunks every 250ms
-      setIsRecording(true);
-      setRecordingDuration(0);
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingDuration((d) => d + 1);
-      }, 1000);
-    } catch {
-      // Mic permission denied or not available
-    }
-  };
-
-  const stopRecording = async () => {
-    if (!isRecording || !mediaRecorderRef.current) return;
-
-    // Stop MediaRecorder and wait for final chunks to flush
-    const recorder = mediaRecorderRef.current;
-    const chunks = await new Promise<Blob[]>((resolve) => {
-      recorder.onstop = () => resolve(audioChunksRef.current);
-      recorder.stop();
-    });
-
-    // Stop mic tracks immediately
-    recorder.stream.getTracks().forEach((t) => t.stop());
-    mediaRecorderRef.current = null;
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = null;
-    }
-    setRecordingDuration(0);
-    setIsRecording(false);
-
-    if (chunks.length === 0) return;
-
-    setIsLoading(true);
-
-    const userMessage: Message = {
-      id: generateId(),
-      role: "user",
-      content: "[Voice message]",
-      inputModality: "audio",
-    };
-
-    const assistantMessageId = generateId();
-    const assistantMessage: Message = {
-      id: assistantMessageId,
-      role: "assistant",
-      content: "",
-      steps: [],
-      reasoning: "",
-      isStreaming: true,
-    };
-
-    setMessages((prev) => [...prev, userMessage, assistantMessage]);
-
-    try {
+      // Create conversation if needed
       let convId = conversationId;
       if (!convId) {
         convId = await createConversation();
         setConversationId(convId);
       }
+
+      // Set up messages
+      const assistantMessageId = generateId();
+      pendingAssistantIdRef.current = assistantMessageId;
 
       // Open WebSocket and wait for it to be ready
       const ws = setupAudioWebSocket(convId, assistantMessageId);
@@ -1345,29 +1284,80 @@ export default function App() {
         })
       );
 
-      // Send all accumulated audio chunks as binary frames
-      for (const chunk of chunks) {
-        const buf = await chunk.arrayBuffer();
-        ws.send(buf);
-      }
+      // Start mic and stream chunks directly over WebSocket
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+      mediaRecorderRef.current = mediaRecorder;
 
-      // Signal end of audio
-      ws.send(JSON.stringify({ type: "audio.end" }));
-    } catch (error) {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === assistantMessageId
-            ? {
-                ...msg,
-                content: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
-                isStreaming: false,
-              }
-            : msg
-        )
-      );
-      setIsLoading(false);
-    } finally {
-      audioChunksRef.current = [];
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0 && audioWsRef.current?.readyState === WebSocket.OPEN) {
+          e.data.arrayBuffer().then((buf) => {
+            audioWsRef.current?.send(buf);
+          });
+        }
+      };
+
+      mediaRecorder.start(250); // stream chunks every 250ms
+      setIsRecording(true);
+      setRecordingDuration(0);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration((d) => d + 1);
+      }, 1000);
+    } catch {
+      // Mic permission denied, WS failed, etc — clean up
+      pendingAssistantIdRef.current = null;
+      if (audioWsRef.current) {
+        audioWsRef.current.close();
+        audioWsRef.current = null;
+      }
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!isRecording || !mediaRecorderRef.current) return;
+
+    const recorder = mediaRecorderRef.current;
+    const assistantMessageId = pendingAssistantIdRef.current!;
+    pendingAssistantIdRef.current = null;
+
+    // Add messages to UI
+    const userMessage: Message = {
+      id: generateId(),
+      role: "user",
+      content: "[Voice message]",
+      inputModality: "audio",
+    };
+    const assistantMessage: Message = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "",
+      steps: [],
+      reasoning: "",
+      isStreaming: true,
+    };
+    setMessages((prev) => [...prev, userMessage, assistantMessage]);
+    setIsLoading(true);
+
+    // Stop MediaRecorder — final ondataavailable fires, then onstop
+    await new Promise<void>((resolve) => {
+      recorder.onstop = () => resolve();
+      recorder.stop();
+    });
+
+    // Stop mic tracks
+    recorder.stream.getTracks().forEach((t) => t.stop());
+    mediaRecorderRef.current = null;
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    setRecordingDuration(0);
+    setIsRecording(false);
+
+    // Signal end of audio — small delay to let final binary sends complete
+    await new Promise((r) => setTimeout(r, 50));
+    if (audioWsRef.current?.readyState === WebSocket.OPEN) {
+      audioWsRef.current.send(JSON.stringify({ type: "audio.end" }));
     }
   };
 

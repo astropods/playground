@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, type MutableRefObject } from "react";
 import {
   ArrowUp,
   Loader2,
@@ -841,13 +841,16 @@ export default function App() {
   const eventSourceRef = useRef<EventSource | null>(null);
 
   // Audio recording state
-  const [isRecording, setIsRecording] = useState(false);
+  const [isListening, setIsListening] = useState(false); // VAD is active, waiting for speech
+  const [isRecording, setIsRecording] = useState(false); // speech detected, streaming audio
   const [recordingDuration, setRecordingDuration] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioWsRef = useRef<WebSocket | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingAssistantIdRef = useRef<string | null>(null);
   const pendingUserMsgIdRef = useRef<string | null>(null);
+  const vadRef = useRef<any>(null); // MicVAD instance
+  const speechActiveRef = useRef(false); // true between onSpeechStart and onSpeechEnd
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1151,138 +1154,105 @@ export default function App() {
     }
   };
 
-  const cleanupRecording = useCallback(() => {
+  const cleanupAudio = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
     }
     mediaRecorderRef.current?.stream.getTracks().forEach((t) => t.stop());
     mediaRecorderRef.current = null;
-    pendingAssistantIdRef.current = null;
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
+    if (audioWsRef.current) {
+      audioWsRef.current.close();
+      audioWsRef.current = null;
+    }
+    if (vadRef.current) {
+      vadRef.current.destroy();
+      vadRef.current = null;
+    }
+    speechActiveRef.current = false;
+    pendingAssistantIdRef.current = null;
+    pendingUserMsgIdRef.current = null;
     setRecordingDuration(0);
     setIsRecording(false);
+    setIsListening(false);
   }, []);
 
-  const setupAudioWebSocket = useCallback(
-    (convId: string): WebSocket => {
-      const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsBase = API_URL
-        ? API_URL.replace(/^http/, "ws")
-        : `${wsProtocol}//${window.location.host}`;
-      const ws = new WebSocket(`${wsBase}/api/conversations/${convId}/audio`);
-      audioWsRef.current = ws;
-
-      ws.onclose = () => {
-        audioWsRef.current = null;
-      };
-
-      return ws;
-    },
-    []
-  );
-
-  const startRecording = async () => {
-    if (isLoading || isRecording) return;
-
-    try {
-      // Create conversation if needed
-      let convId = conversationId;
-      if (!convId) {
-        convId = await createConversation();
-        setConversationId(convId);
-      }
-
-      // Add placeholder messages to UI immediately
-      const userMessageId = generateId();
-      const assistantMessageId = generateId();
-      pendingUserMsgIdRef.current = userMessageId;
-      pendingAssistantIdRef.current = assistantMessageId;
-
-      const userMessage: Message = {
-        id: userMessageId,
-        role: "user",
-        content: "[Voice message]",
-        inputModality: "audio",
-      };
-      const assistantMessage: Message = {
-        id: assistantMessageId,
-        role: "assistant",
-        content: "",
-        steps: [],
-        reasoning: "",
-        isStreaming: true,
-      };
-      setMessages((prev) => [...prev, userMessage, assistantMessage]);
-      setIsLoading(true);
-
-      // Open SSE first — agent responses (transcript + content) flow through here
-      setupEventSource(convId, assistantMessageId);
-
-      // Open audio WebSocket (ingest-only) and wait for it to be ready
-      const ws = setupAudioWebSocket(convId);
-      await new Promise<void>((resolve, reject) => {
-        ws.onopen = () => resolve();
-        ws.onerror = () => reject(new Error("WebSocket connection failed"));
-      });
-
-      // Send audio config
-      ws.send(
-        JSON.stringify({
-          type: "audio.config",
-          encoding: "webm_opus",
-          sample_rate: 48000,
-          channels: 1,
-          source: "browser",
-        })
-      );
-
-      // Start mic and stream chunks directly over WebSocket
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
-      mediaRecorderRef.current = mediaRecorder;
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0 && audioWsRef.current?.readyState === WebSocket.OPEN) {
-          e.data.arrayBuffer().then((buf) => {
-            audioWsRef.current?.send(buf);
-          });
-        }
-      };
-
-      mediaRecorder.start(250); // stream chunks every 250ms
-      setIsRecording(true);
-      setRecordingDuration(0);
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingDuration((d) => d + 1);
-      }, 1000);
-    } catch {
-      // Mic permission denied, WS failed, etc — clean up
-      pendingAssistantIdRef.current = null;
-      pendingUserMsgIdRef.current = null;
-      if (audioWsRef.current) {
-        audioWsRef.current.close();
-        audioWsRef.current = null;
-      }
-    }
-  };
-
-  const stopRecording = async () => {
-    if (!isRecording || !mediaRecorderRef.current) return;
-
-    const recorder = mediaRecorderRef.current;
-
-    // Stop MediaRecorder — final ondataavailable fires, then onstop
-    await new Promise<void>((resolve) => {
-      recorder.onstop = () => resolve();
-      recorder.stop();
+  // Opens the audio WebSocket and returns it once ready
+  const openAudioWs = useCallback(async (convId: string): Promise<WebSocket> => {
+    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsBase = API_URL
+      ? API_URL.replace(/^http/, "ws")
+      : `${wsProtocol}//${window.location.host}`;
+    const ws = new WebSocket(`${wsBase}/api/conversations/${convId}/audio`);
+    audioWsRef.current = ws;
+    ws.onclose = () => { audioWsRef.current = null; };
+    await new Promise<void>((resolve, reject) => {
+      ws.onopen = () => resolve();
+      ws.onerror = () => reject(new Error("WebSocket connection failed"));
     });
+    return ws;
+  }, []);
 
-    // Stop mic tracks
-    recorder.stream.getTracks().forEach((t) => t.stop());
-    mediaRecorderRef.current = null;
+  // Called by VAD when speech starts
+  const handleSpeechStart = useCallback(async (
+    convIdRef: MutableRefObject<string | null>,
+  ) => {
+    if (speechActiveRef.current) return;
+    speechActiveRef.current = true;
+    setIsRecording(true);
+    setRecordingDuration(0);
+    recordingTimerRef.current = setInterval(() => {
+      setRecordingDuration((d) => d + 1);
+    }, 1000);
+
+    // Ensure conversation exists
+    let convId = convIdRef.current;
+    if (!convId) {
+      convId = await createConversation();
+      setConversationId(convId);
+      convIdRef.current = convId;
+    }
+
+    // Add placeholder messages
+    const userMessageId = generateId();
+    const assistantMessageId = generateId();
+    pendingUserMsgIdRef.current = userMessageId;
+    pendingAssistantIdRef.current = assistantMessageId;
+
+    setMessages((prev) => [
+      ...prev,
+      { id: userMessageId, role: "user" as const, content: "[Listening...]", inputModality: "audio" as const },
+      { id: assistantMessageId, role: "assistant" as const, content: "", steps: [], reasoning: "", isStreaming: true },
+    ]);
+    setIsLoading(true);
+
+    // Open SSE for agent responses
+    setupEventSource(convId, assistantMessageId);
+
+    // Open audio WS and send config
+    try {
+      const ws = await openAudioWs(convId);
+      ws.send(JSON.stringify({
+        type: "audio.config",
+        encoding: "webm_opus",
+        sample_rate: 48000,
+        channels: 1,
+        source: "browser",
+      }));
+    } catch {
+      // WS failed — speech will still be captured by VAD
+    }
+  }, [createConversation, openAudioWs, setupEventSource]);
+
+  // Called by VAD when speech ends — receives the captured audio segment
+  const handleSpeechEnd = useCallback(() => {
+    if (!speechActiveRef.current) return;
+    speechActiveRef.current = false;
+
+    // Stop the recording timer
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
@@ -1290,22 +1260,81 @@ export default function App() {
     setRecordingDuration(0);
     setIsRecording(false);
 
-    // Signal end of audio — small delay to let final binary sends complete
-    await new Promise((r) => setTimeout(r, 50));
-    if (audioWsRef.current?.readyState === WebSocket.OPEN) {
-      audioWsRef.current.send(JSON.stringify({ type: "audio.end" }));
+    // Stop MediaRecorder — final chunks will flush via ondataavailable
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+      // After a short delay for final chunks, send audio.end
+      setTimeout(() => {
+        if (audioWsRef.current?.readyState === WebSocket.OPEN) {
+          audioWsRef.current.send(JSON.stringify({ type: "audio.end" }));
+        }
+      }, 100);
+    }
+  }, []);
+
+  // Toggle VAD listening on/off
+  const toggleListening = async () => {
+    if (isListening) {
+      // Stop VAD and clean up
+      cleanupAudio();
+      return;
+    }
+
+    if (isLoading) return;
+
+    try {
+      // We need a ref to the conversation ID that handleSpeechStart can mutate
+      const convIdRef = { current: conversationId } as MutableRefObject<string | null>;
+
+      // Get mic stream — shared between VAD and MediaRecorder
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const { MicVAD } = await import("@ricky0123/vad-web");
+      const vad = await MicVAD.new({
+        baseAssetPath: "/vad/",
+        onnxWASMBasePath: "/vad/",
+        startOnLoad: true,
+        getStream: async () => micStream,
+        onSpeechStart: () => {
+          handleSpeechStart(convIdRef);
+
+          // Start MediaRecorder from the shared mic stream to produce WebM/Opus chunks
+          if (!mediaRecorderRef.current) {
+            try {
+              const recorder = new MediaRecorder(micStream, { mimeType: "audio/webm;codecs=opus" });
+              mediaRecorderRef.current = recorder;
+              recorder.ondataavailable = (e) => {
+                if (e.data.size > 0 && audioWsRef.current?.readyState === WebSocket.OPEN) {
+                  e.data.arrayBuffer().then((buf) => {
+                    audioWsRef.current?.send(buf);
+                  });
+                }
+              };
+              recorder.start(250);
+            } catch {
+              // MediaRecorder failed — audio will still be captured by VAD
+            }
+          }
+        },
+        onSpeechEnd: () => {
+          handleSpeechEnd();
+        },
+        onVADMisfire: () => {
+          // Speech was too short — ignore
+        },
+      });
+
+      vadRef.current = vad;
+      setIsListening(true);
+    } catch (err) {
+      console.error("VAD initialization failed:", err);
     }
   };
 
-  // Cleanup audio on unmount
+  // Cleanup on unmount
   useEffect(() => {
-    return () => {
-      cleanupRecording();
-      if (audioWsRef.current) {
-        audioWsRef.current.close();
-      }
-    };
-  }, [cleanupRecording]);
+    return () => { cleanupAudio(); };
+  }, [cleanupAudio]);
 
   if (connectionError) {
     return (
@@ -1356,13 +1385,22 @@ export default function App() {
           {/* Input */}
           <div className="shrink-0 px-6 py-4 border-t border-border bg-card/50 backdrop-blur-sm">
             <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
-              <div className={`relative flex flex-col gap-1 p-2 bg-muted rounded-[20px] border transition-colors ${isRecording ? "border-red-500" : "border-border focus-within:border-primary"}`}>
-                {isRecording ? (
+              <div className={`relative flex flex-col gap-1 p-2 bg-muted rounded-[20px] border transition-colors ${isRecording ? "border-red-500" : isListening ? "border-amber-500" : "border-border focus-within:border-primary"}`}>
+                {(isListening || isRecording) ? (
                   <div className="flex items-center justify-center gap-3 px-3 py-2 min-h-[72px]">
-                    <span className="recording-pulse w-3 h-3 rounded-full bg-red-500" />
-                    <span className="text-sm text-foreground">
-                      Recording{recordingDuration > 0 ? ` — ${Math.floor(recordingDuration / 60)}:${(recordingDuration % 60).toString().padStart(2, "0")}` : "..."}
-                    </span>
+                    {isRecording ? (
+                      <>
+                        <span className="recording-pulse w-3 h-3 rounded-full bg-red-500" />
+                        <span className="text-sm text-foreground">
+                          Speaking{recordingDuration > 0 ? ` — ${Math.floor(recordingDuration / 60)}:${(recordingDuration % 60).toString().padStart(2, "0")}` : "..."}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Mic className="w-4 h-4 text-amber-500 animate-pulse" />
+                        <span className="text-sm text-muted-foreground">Listening for speech...</span>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <textarea
@@ -1388,23 +1426,27 @@ export default function App() {
                     onSelect={setSelectedModel}
                   />
                   <div className="flex items-center gap-2">
-                    {isRecording ? (
+                    {(isListening || isRecording) ? (
                       <button
                         type="button"
-                        onClick={stopRecording}
-                        className="shrink-0 w-9 h-9 rounded-xl bg-red-500 flex items-center justify-center text-white hover:bg-red-600 transition-all duration-200"
-                        title="Stop recording and send"
+                        onClick={toggleListening}
+                        className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-white transition-all duration-200 ${
+                          isRecording
+                            ? "bg-red-500 hover:bg-red-600"
+                            : "bg-amber-500 hover:bg-amber-600"
+                        }`}
+                        title={isRecording ? "Speech detected — click to stop" : "Listening for speech — click to stop"}
                       >
-                        <Square className="w-4 h-4" />
+                        {isRecording ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4 animate-pulse" />}
                       </button>
                     ) : (
                       <>
                         <button
                           type="button"
-                          onClick={startRecording}
+                          onClick={toggleListening}
                           disabled={isLoading}
                           className="shrink-0 w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                          title="Record voice message"
+                          title="Start voice input (auto-detects speech)"
                         >
                           <Mic className="w-4 h-4" />
                         </button>
@@ -1425,7 +1467,13 @@ export default function App() {
                 </div>
               </div>
               <p className="text-center text-xs text-muted-foreground mt-3">
-                {isRecording ? "Click stop to send voice message" : "Press Enter to send, Shift+Enter for new line"}
+                {isRecording ? (
+                  <><span className="recording-pulse inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5" />Speaking{recordingDuration > 0 ? ` — ${Math.floor(recordingDuration / 60)}:${(recordingDuration % 60).toString().padStart(2, "0")}` : "..."}</>
+                ) : isListening ? (
+                  "Listening for speech..."
+                ) : (
+                  "Press Enter to send, Shift+Enter for new line"
+                )}
               </p>
             </form>
           </div>

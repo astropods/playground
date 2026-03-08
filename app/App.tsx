@@ -1444,60 +1444,51 @@ export default function App() {
                     onSelect={setSelectedModel}
                   />
                   <div className="flex items-center gap-2">
-                    {(isListening || isRecording) ? (
+                    <div className="relative">
                       <button
                         type="button"
-                        onClick={toggleListening}
-                        className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-white transition-all duration-200 ${
+                        onClick={(isListening || isRecording) ? toggleListening : toggleListening}
+                        disabled={!isListening && !isRecording && isLoading}
+                        className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 ${
                           isRecording
-                            ? "bg-red-500 hover:bg-red-600"
-                            : "bg-amber-500 hover:bg-amber-600"
+                            ? "bg-red-500 hover:bg-red-600 text-white"
+                            : isListening
+                            ? "bg-amber-500 hover:bg-amber-600 text-white"
+                            : "bg-card border border-border text-muted-foreground hover:text-foreground hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
                         }`}
-                        title={isRecording ? "Speech detected — click to stop" : "Listening for speech — click to stop"}
+                        title={isRecording ? "Speech detected — click to stop" : isListening ? "Listening — click to stop" : "Start voice input"}
                       >
-                        {isRecording ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4 animate-pulse" />}
+                        {isRecording ? <Square className="w-4 h-4" /> : <Mic className={`w-4 h-4 ${isListening ? "animate-pulse" : ""}`} />}
                       </button>
-                    ) : (
-                      <>
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={toggleListening}
-                            disabled={isLoading}
-                            className="shrink-0 w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                            title={voiceMode === "single" ? "Voice input (single utterance)" : "Voice input (continuous)"}
-                          >
-                            <Mic className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = voiceMode === "single" ? "continuous" : "single";
-                              setVoiceMode(next);
-                              voiceModeRef.current = next;
-                            }}
-                            className={`absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full border text-[8px] font-bold flex items-center justify-center transition-colors ${
-                              voiceMode === "continuous"
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "bg-muted text-muted-foreground border-border hover:border-primary"
-                            }`}
-                            title={voiceMode === "single" ? "Switch to continuous mode" : "Switch to single utterance mode"}
-                          >
-                            {voiceMode === "continuous" ? "\u221E" : "1"}
-                          </button>
-                        </div>
-                        <button
-                          type="submit"
-                          disabled={!input.trim() || isLoading}
-                          className="shrink-0 w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 transition-all duration-200"
-                        >
-                          {isLoading ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <ArrowUp className="w-4 h-4" />
-                          )}
-                        </button>
-                      </>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = voiceMode === "single" ? "continuous" : "single";
+                          setVoiceMode(next);
+                          voiceModeRef.current = next;
+                        }}
+                        className={`absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full border text-[8px] font-bold flex items-center justify-center transition-colors ${
+                          voiceMode === "continuous"
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-muted text-muted-foreground border-border hover:border-primary"
+                        }`}
+                        title={voiceMode === "single" ? "Switch to continuous mode" : "Switch to single utterance mode"}
+                      >
+                        {voiceMode === "continuous" ? "\u221E" : "1"}
+                      </button>
+                    </div>
+                    {!(isListening || isRecording) && (
+                      <button
+                        type="submit"
+                        disabled={!input.trim() || isLoading}
+                        className="shrink-0 w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 transition-all duration-200"
+                      >
+                        {isLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <ArrowUp className="w-4 h-4" />
+                        )}
+                      </button>
                     )}
                   </div>
                 </div>

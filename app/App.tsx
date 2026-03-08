@@ -847,6 +847,7 @@ export default function App() {
   const audioWsRef = useRef<WebSocket | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingAssistantIdRef = useRef<string | null>(null);
+  const pendingUserMsgIdRef = useRef<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1034,6 +1035,21 @@ export default function App() {
             );
             setIsLoading(false);
             break;
+
+          case "transcript": {
+            // Agent transcribed the user's audio — update the placeholder message
+            const userMsgId = data.message_id || pendingUserMsgIdRef.current;
+            if (userMsgId) {
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === userMsgId
+                    ? { ...msg, content: data.text }
+                    : msg
+                )
+              );
+            }
+            break;
+          }
         }
       } catch {
         // Skip invalid JSON
@@ -1048,6 +1064,7 @@ export default function App() {
     es.addEventListener('finish', handleEvent);
     es.addEventListener('error', handleEvent);
     es.addEventListener('connected', handleEvent);
+    es.addEventListener('transcript', handleEvent);
     es.onmessage = handleEvent; // Also handle unnamed events
 
     es.onerror = () => {
@@ -1150,97 +1167,13 @@ export default function App() {
   }, []);
 
   const setupAudioWebSocket = useCallback(
-    (convId: string, assistantMessageId: string): WebSocket => {
+    (convId: string): WebSocket => {
       const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const wsBase = API_URL
         ? API_URL.replace(/^http/, "ws")
         : `${wsProtocol}//${window.location.host}`;
       const ws = new WebSocket(`${wsBase}/api/conversations/${convId}/audio`);
       audioWsRef.current = ws;
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          switch (data.type) {
-            case "chunk":
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? { ...msg, content: msg.content + (data.content || "") }
-                    : msg
-                )
-              );
-              break;
-            case "step-start":
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        steps: [
-                          ...(msg.steps || []),
-                          { id: data.step_id, name: data.name, type: "tool" as const, status: "running" as const },
-                        ],
-                      }
-                    : msg
-                )
-              );
-              break;
-            case "step-end":
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        steps: msg.steps?.map((s) =>
-                          s.id === data.step_id ? { ...s, status: "completed" as const } : s
-                        ),
-                      }
-                    : msg
-                )
-              );
-              break;
-            case "reasoning-delta":
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? { ...msg, reasoning: (msg.reasoning || "") + (data.content || "") }
-                    : msg
-                )
-              );
-              break;
-            case "finish":
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId ? { ...msg, isStreaming: false } : msg
-                )
-              );
-              setIsLoading(false);
-              break;
-            case "error":
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? { ...msg, content: `Error: ${data.message || "Unknown error"}`, isStreaming: false }
-                    : msg
-                )
-              );
-              setIsLoading(false);
-              break;
-          }
-        } catch {
-          // skip invalid JSON
-        }
-      };
-
-      ws.onerror = () => {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === assistantMessageId ? { ...msg, isStreaming: false } : msg
-          )
-        );
-        setIsLoading(false);
-      };
 
       ws.onclose = () => {
         audioWsRef.current = null;
@@ -1262,12 +1195,34 @@ export default function App() {
         setConversationId(convId);
       }
 
-      // Set up messages
+      // Add placeholder messages to UI immediately
+      const userMessageId = generateId();
       const assistantMessageId = generateId();
+      pendingUserMsgIdRef.current = userMessageId;
       pendingAssistantIdRef.current = assistantMessageId;
 
-      // Open WebSocket and wait for it to be ready
-      const ws = setupAudioWebSocket(convId, assistantMessageId);
+      const userMessage: Message = {
+        id: userMessageId,
+        role: "user",
+        content: "[Voice message]",
+        inputModality: "audio",
+      };
+      const assistantMessage: Message = {
+        id: assistantMessageId,
+        role: "assistant",
+        content: "",
+        steps: [],
+        reasoning: "",
+        isStreaming: true,
+      };
+      setMessages((prev) => [...prev, userMessage, assistantMessage]);
+      setIsLoading(true);
+
+      // Open SSE first — agent responses (transcript + content) flow through here
+      setupEventSource(convId, assistantMessageId);
+
+      // Open audio WebSocket (ingest-only) and wait for it to be ready
+      const ws = setupAudioWebSocket(convId);
       await new Promise<void>((resolve, reject) => {
         ws.onopen = () => resolve();
         ws.onerror = () => reject(new Error("WebSocket connection failed"));
@@ -1306,6 +1261,7 @@ export default function App() {
     } catch {
       // Mic permission denied, WS failed, etc — clean up
       pendingAssistantIdRef.current = null;
+      pendingUserMsgIdRef.current = null;
       if (audioWsRef.current) {
         audioWsRef.current.close();
         audioWsRef.current = null;
@@ -1317,26 +1273,6 @@ export default function App() {
     if (!isRecording || !mediaRecorderRef.current) return;
 
     const recorder = mediaRecorderRef.current;
-    const assistantMessageId = pendingAssistantIdRef.current!;
-    pendingAssistantIdRef.current = null;
-
-    // Add messages to UI
-    const userMessage: Message = {
-      id: generateId(),
-      role: "user",
-      content: "[Voice message]",
-      inputModality: "audio",
-    };
-    const assistantMessage: Message = {
-      id: assistantMessageId,
-      role: "assistant",
-      content: "",
-      steps: [],
-      reasoning: "",
-      isStreaming: true,
-    };
-    setMessages((prev) => [...prev, userMessage, assistantMessage]);
-    setIsLoading(true);
 
     // Stop MediaRecorder — final ondataavailable fires, then onstop
     await new Promise<void>((resolve) => {

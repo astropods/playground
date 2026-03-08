@@ -1292,7 +1292,7 @@ export default function App() {
       const { MicVAD } = await import("@ricky0123/vad-web");
       const vad = await MicVAD.new({
         baseAssetPath: "/vad/",
-        onnxWASMBasePath: "/vad/",
+        onnxWASMBasePath: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/",
         startOnLoad: true,
         getStream: async () => micStream,
         onSpeechStart: () => {

@@ -1042,6 +1042,7 @@ export default function App() {
           case "transcript": {
             // Agent transcribed the user's audio — update the placeholder message
             const userMsgId = data.message_id || pendingUserMsgIdRef.current;
+            console.log('Transcript event:', { text: data.text, message_id: data.message_id, pendingUserMsgId: pendingUserMsgIdRef.current, resolved: userMsgId });
             if (userMsgId) {
               setMessages((prev) =>
                 prev.map((msg) =>

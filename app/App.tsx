@@ -756,10 +756,17 @@ function ChatMessage({ message }: { message: Message }) {
               : "bg-card"
               }`}
           >
-            {message.inputModality === "audio" && isUser ? (
+            {message.inputModality === "audio" && isUser && (message.content === "[Listening...]" || message.content === "[Voice message]") ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Mic className="w-4 h-4" />
-                <span>Voice message</span>
+                <span>{message.content === "[Listening...]" ? "Listening..." : "Voice message"}</span>
+              </div>
+            ) : message.inputModality === "audio" && isUser ? (
+              <div className="flex items-start gap-2">
+                <Mic className="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground" />
+                <div className="markdown-content">
+                  <Markdown>{message.content}</Markdown>
+                </div>
               </div>
             ) : (
             <div className="markdown-content">
@@ -1042,7 +1049,6 @@ export default function App() {
           case "transcript": {
             // Agent transcribed the user's audio — update the placeholder message
             const userMsgId = data.message_id || pendingUserMsgIdRef.current;
-            console.log('Transcript event:', { text: data.text, message_id: data.message_id, pendingUserMsgId: pendingUserMsgIdRef.current, resolved: userMsgId });
             if (userMsgId) {
               setMessages((prev) =>
                 prev.map((msg) =>

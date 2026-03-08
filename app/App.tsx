@@ -1483,7 +1483,7 @@ export default function App() {
                             }`}
                             title={voiceMode === "single" ? "Switch to continuous mode" : "Switch to single utterance mode"}
                           >
-                            {voiceMode === "continuous" ? "C" : "1"}
+                            {voiceMode === "continuous" ? "\u221E" : "1"}
                           </button>
                         </div>
                         <button

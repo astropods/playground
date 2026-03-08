@@ -851,6 +851,8 @@ export default function App() {
   const [isListening, setIsListening] = useState(false); // VAD is active, waiting for speech
   const [isRecording, setIsRecording] = useState(false); // speech detected, streaming audio
   const [recordingDuration, setRecordingDuration] = useState(0);
+  const [voiceMode, setVoiceMode] = useState<"single" | "continuous">("single");
+  const voiceModeRef = useRef<"single" | "continuous">("single"); // ref for callbacks
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioWsRef = useRef<WebSocket | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1270,10 +1272,19 @@ export default function App() {
     // Stop MediaRecorder — final chunks will flush via ondataavailable
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
+      mediaRecorderRef.current = null;
       // After a short delay for final chunks, send audio.end
       setTimeout(() => {
         if (audioWsRef.current?.readyState === WebSocket.OPEN) {
           audioWsRef.current.send(JSON.stringify({ type: "audio.end" }));
+        }
+        // In single mode, stop VAD after this utterance
+        if (voiceModeRef.current === "single") {
+          if (vadRef.current) {
+            vadRef.current.destroy();
+            vadRef.current = null;
+          }
+          setIsListening(false);
         }
       }, 100);
     }
@@ -1448,15 +1459,33 @@ export default function App() {
                       </button>
                     ) : (
                       <>
-                        <button
-                          type="button"
-                          onClick={toggleListening}
-                          disabled={isLoading}
-                          className="shrink-0 w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                          title="Start voice input (auto-detects speech)"
-                        >
-                          <Mic className="w-4 h-4" />
-                        </button>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={toggleListening}
+                            disabled={isLoading}
+                            className="shrink-0 w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                            title={voiceMode === "single" ? "Voice input (single utterance)" : "Voice input (continuous)"}
+                          >
+                            <Mic className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = voiceMode === "single" ? "continuous" : "single";
+                              setVoiceMode(next);
+                              voiceModeRef.current = next;
+                            }}
+                            className={`absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full border text-[8px] font-bold flex items-center justify-center transition-colors ${
+                              voiceMode === "continuous"
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-muted text-muted-foreground border-border hover:border-primary"
+                            }`}
+                            title={voiceMode === "single" ? "Switch to continuous mode" : "Switch to single utterance mode"}
+                          >
+                            {voiceMode === "continuous" ? "C" : "1"}
+                          </button>
+                        </div>
                         <button
                           type="submit"
                           disabled={!input.trim() || isLoading}
@@ -1477,7 +1506,7 @@ export default function App() {
                 {isRecording ? (
                   <><span className="recording-pulse inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5" />Speaking{recordingDuration > 0 ? ` — ${Math.floor(recordingDuration / 60)}:${(recordingDuration % 60).toString().padStart(2, "0")}` : "..."}</>
                 ) : isListening ? (
-                  "Listening for speech..."
+                  `Listening for speech${voiceMode === "continuous" ? " (continuous)" : ""}...`
                 ) : (
                   "Press Enter to send, Shift+Enter for new line"
                 )}

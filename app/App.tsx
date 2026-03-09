@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo, type MutableRefObject } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   ArrowUp,
   Loader2,
@@ -40,6 +40,7 @@ import astroLogo from "./astro-logo.svg";
 import astroLogoDark from "./astro-logo-dark.svg";
 import playgroundIllustration from "./playground-empty-state.svg";
 import playgroundIllustrationDark from "./playground-empty-state-dark.svg";
+import { useAudio } from "./hooks/useAudio";
 
 // Runtime config from window.__ENV__ (injected by nginx) or Vite env or default
 declare global {
@@ -846,20 +847,7 @@ export default function App() {
   // Conversation state for messaging API
   const [conversationId, setConversationId] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
-
-  // Audio recording state
-  const [isListening, setIsListening] = useState(false); // VAD is active, waiting for speech
-  const [isRecording, setIsRecording] = useState(false); // speech detected, streaming audio
-  const [recordingDuration, setRecordingDuration] = useState(0);
-  const [voiceMode, setVoiceMode] = useState<"single" | "continuous">("single");
-  const voiceModeRef = useRef<"single" | "continuous">("single"); // ref for callbacks
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioWsRef = useRef<WebSocket | null>(null);
-  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pendingAssistantIdRef = useRef<string | null>(null);
-  const pendingUserMsgIdRef = useRef<string | null>(null);
-  const vadRef = useRef<any>(null); // MicVAD instance
-  const speechActiveRef = useRef(false); // true between onSpeechStart and onSpeechEnd
+  const getPendingUserMsgIdRef = useRef<(() => string | null) | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1050,7 +1038,7 @@ export default function App() {
 
           case "transcript": {
             // Agent transcribed the user's audio — update the placeholder message
-            const userMsgId = data.message_id || pendingUserMsgIdRef.current;
+            const userMsgId = data.message_id || getPendingUserMsgIdRef.current?.();
             if (userMsgId) {
               setMessages((prev) =>
                 prev.map((msg) =>
@@ -1090,6 +1078,29 @@ export default function App() {
       setIsLoading(false);
     };
   };
+
+  const {
+    isListening,
+    isRecording,
+    recordingDuration,
+    voiceMode,
+    toggleListening,
+    toggleVoiceMode,
+    getPendingUserMsgId,
+  } = useAudio({
+    conversationId,
+    setConversationId,
+    createConversation,
+    setupEventSource,
+    setMessages,
+    setIsLoading,
+    isLoading,
+    generateId,
+    apiUrl: API_URL,
+  });
+
+  // Wire the getter ref so setupEventSource can access it
+  getPendingUserMsgIdRef.current = getPendingUserMsgId;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1163,196 +1174,6 @@ export default function App() {
     }
   };
 
-  const cleanupAudio = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.stop();
-    }
-    mediaRecorderRef.current?.stream.getTracks().forEach((t) => t.stop());
-    mediaRecorderRef.current = null;
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = null;
-    }
-    if (audioWsRef.current) {
-      audioWsRef.current.close();
-      audioWsRef.current = null;
-    }
-    if (vadRef.current) {
-      vadRef.current.destroy();
-      vadRef.current = null;
-    }
-    speechActiveRef.current = false;
-    pendingAssistantIdRef.current = null;
-    pendingUserMsgIdRef.current = null;
-    setRecordingDuration(0);
-    setIsRecording(false);
-    setIsListening(false);
-  }, []);
-
-  // Opens the audio WebSocket and returns it once ready
-  const openAudioWs = useCallback(async (convId: string): Promise<WebSocket> => {
-    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsBase = API_URL
-      ? API_URL.replace(/^http/, "ws")
-      : `${wsProtocol}//${window.location.host}`;
-    const ws = new WebSocket(`${wsBase}/api/conversations/${convId}/audio`);
-    audioWsRef.current = ws;
-    ws.onclose = () => { audioWsRef.current = null; };
-    await new Promise<void>((resolve, reject) => {
-      ws.onopen = () => resolve();
-      ws.onerror = () => reject(new Error("WebSocket connection failed"));
-    });
-    return ws;
-  }, []);
-
-  // Called by VAD when speech starts
-  const handleSpeechStart = useCallback(async (
-    convIdRef: MutableRefObject<string | null>,
-  ) => {
-    if (speechActiveRef.current) return;
-    speechActiveRef.current = true;
-    setIsRecording(true);
-    setRecordingDuration(0);
-    recordingTimerRef.current = setInterval(() => {
-      setRecordingDuration((d) => d + 1);
-    }, 1000);
-
-    // Ensure conversation exists
-    let convId = convIdRef.current;
-    if (!convId) {
-      convId = await createConversation();
-      setConversationId(convId);
-      convIdRef.current = convId;
-    }
-
-    // Add placeholder messages
-    const userMessageId = generateId();
-    const assistantMessageId = generateId();
-    pendingUserMsgIdRef.current = userMessageId;
-    pendingAssistantIdRef.current = assistantMessageId;
-
-    setMessages((prev) => [
-      ...prev,
-      { id: userMessageId, role: "user" as const, content: "[Listening...]", inputModality: "audio" as const },
-      { id: assistantMessageId, role: "assistant" as const, content: "", steps: [], reasoning: "", isStreaming: true },
-    ]);
-    setIsLoading(true);
-
-    // Open SSE for agent responses
-    setupEventSource(convId, assistantMessageId);
-
-    // Open audio WS and send config
-    try {
-      const ws = await openAudioWs(convId);
-      ws.send(JSON.stringify({
-        type: "audio.config",
-        encoding: "webm_opus",
-        sample_rate: 48000,
-        channels: 1,
-        source: "browser",
-      }));
-    } catch {
-      // WS failed — speech will still be captured by VAD
-    }
-  }, [createConversation, openAudioWs, setupEventSource]);
-
-  // Called by VAD when speech ends — receives the captured audio segment
-  const handleSpeechEnd = useCallback(() => {
-    if (!speechActiveRef.current) return;
-    speechActiveRef.current = false;
-
-    // Stop the recording timer
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = null;
-    }
-    setRecordingDuration(0);
-    setIsRecording(false);
-
-    // Stop MediaRecorder — final chunks will flush via ondataavailable
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current = null;
-      // After a short delay for final chunks, send audio.end
-      setTimeout(() => {
-        if (audioWsRef.current?.readyState === WebSocket.OPEN) {
-          audioWsRef.current.send(JSON.stringify({ type: "audio.end" }));
-        }
-        // In single mode, stop VAD after this utterance
-        if (voiceModeRef.current === "single") {
-          if (vadRef.current) {
-            vadRef.current.destroy();
-            vadRef.current = null;
-          }
-          setIsListening(false);
-        }
-      }, 100);
-    }
-  }, []);
-
-  // Toggle VAD listening on/off
-  const toggleListening = async () => {
-    if (isListening) {
-      // Stop VAD and clean up
-      cleanupAudio();
-      return;
-    }
-
-    if (isLoading) return;
-
-    try {
-      // We need a ref to the conversation ID that handleSpeechStart can mutate
-      const convIdRef = { current: conversationId } as MutableRefObject<string | null>;
-
-      // Get mic stream — shared between VAD and MediaRecorder
-      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-      const { MicVAD } = await import("@ricky0123/vad-web");
-      const vad = await MicVAD.new({
-        baseAssetPath: "/vad/",
-        onnxWASMBasePath: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/",
-        startOnLoad: true,
-        getStream: async () => micStream,
-        onSpeechStart: () => {
-          handleSpeechStart(convIdRef);
-
-          // Start MediaRecorder from the shared mic stream to produce WebM/Opus chunks
-          if (!mediaRecorderRef.current) {
-            try {
-              const recorder = new MediaRecorder(micStream, { mimeType: "audio/webm;codecs=opus" });
-              mediaRecorderRef.current = recorder;
-              recorder.ondataavailable = (e) => {
-                if (e.data.size > 0 && audioWsRef.current?.readyState === WebSocket.OPEN) {
-                  e.data.arrayBuffer().then((buf) => {
-                    audioWsRef.current?.send(buf);
-                  });
-                }
-              };
-              recorder.start(250);
-            } catch {
-              // MediaRecorder failed — audio will still be captured by VAD
-            }
-          }
-        },
-        onSpeechEnd: () => {
-          handleSpeechEnd();
-        },
-        onVADMisfire: () => {
-          // Speech was too short — ignore
-        },
-      });
-
-      vadRef.current = vad;
-      setIsListening(true);
-    } catch (err) {
-      console.error("VAD initialization failed:", err);
-    }
-  };
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => { cleanupAudio(); };
-  }, [cleanupAudio]);
 
   if (connectionError) {
     return (
@@ -1462,11 +1283,7 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          const next = voiceMode === "single" ? "continuous" : "single";
-                          setVoiceMode(next);
-                          voiceModeRef.current = next;
-                        }}
+                        onClick={toggleVoiceMode}
                         className={`absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full border text-[8px] font-bold flex items-center justify-center transition-colors ${
                           voiceMode === "continuous"
                             ? "bg-primary text-primary-foreground border-primary"

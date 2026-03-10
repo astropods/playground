@@ -1256,7 +1256,6 @@ export default function App() {
                       target.style.height = "72px";
                       target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
                     }}
-                    disabled={isLoading}
                   />
                 )}
                 <div className="flex items-center justify-between">

@@ -228,7 +228,6 @@ export function devAgentPlugin(): Plugin {
 
             const body = await parseBody(req);
             const content = body.content as string;
-            const modelField = (body.model as string) ?? "";
 
             convo.messages.push({ role: "user", content });
             json(res, 200, { ok: true });
@@ -252,18 +251,10 @@ export function devAgentPlugin(): Plugin {
               const { z } = await import("zod");
               const openai = createOpenAI({ apiKey });
 
-              // Parse model: "openai/gpt-4o" → "gpt-4o", default to "gpt-4o"
-              let modelName = "gpt-4o";
-              if (modelField) {
-                const parts = modelField.split("/");
-                const candidate = parts.length > 1 ? parts[1] : parts[0];
-                if (candidate) modelName = candidate;
-              }
-
               let hadError = false;
 
               const result = streamText({
-                model: openai(modelName),
+                model: openai("gpt-4o"),
                 messages: convo.messages,
                 tools: {
                   randomNumber: tool({

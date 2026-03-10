@@ -18,8 +18,6 @@ import {
   Mic,
   Square,
 } from "lucide-react";
-import { AiOutlineOpenAI } from "react-icons/ai";
-import { RiClaudeFill, RiGeminiFill } from "react-icons/ri";
 import Markdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -88,39 +86,6 @@ type Step = {
   type: "tool";
   status: "running" | "completed";
 };
-
-type ModelOption = {
-  id: string;
-  name: string;
-  provider: string;
-  supportsReasoning?: boolean;
-};
-
-const AVAILABLE_MODELS: ModelOption[] = [
-  // OpenAI Frontier Models
-  { id: "openai/gpt-5.2", name: "GPT-5.2", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/gpt-5.2-pro", name: "GPT-5.2 Pro", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/gpt-5.1", name: "GPT-5.1", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/gpt-5", name: "GPT-5", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/gpt-5-mini", name: "GPT-5 Mini", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/gpt-5-nano", name: "GPT-5 Nano", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/gpt-4.1", name: "GPT-4.1", provider: "OpenAI" },
-  { id: "openai/gpt-4.1-mini", name: "GPT-4.1 Mini", provider: "OpenAI" },
-  { id: "openai/gpt-4.1-nano", name: "GPT-4.1 Nano", provider: "OpenAI" },
-  // OpenAI Reasoning Models
-  { id: "openai/o3", name: "o3", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/o4-mini", name: "o4 Mini", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/o3-mini", name: "o3 Mini", provider: "OpenAI", supportsReasoning: true },
-  // OpenAI Legacy Models
-  { id: "openai/gpt-4o", name: "GPT-4o", provider: "OpenAI" },
-  { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", provider: "OpenAI" },
-  // Anthropic Models
-  { id: "anthropic/claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "Anthropic" },
-  { id: "anthropic/claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku", provider: "Anthropic" },
-  // Google Models
-  { id: "google/gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "Google" },
-  { id: "google/gemini-2.5-pro-preview-05-06", name: "Gemini 2.5 Pro", provider: "Google" },
-];
 
 function generateId() {
   return Math.random().toString(36).substring(2, 15);
@@ -235,76 +200,6 @@ function CodeBlock({
       >
         {codeString}
       </SyntaxHighlighter>
-    </div>
-  );
-}
-
-function ProviderIcon({ provider, className }: { provider: string; className?: string }) {
-  if (provider === "OpenAI") return <AiOutlineOpenAI className={className} />;
-  if (provider === "Anthropic") return <RiClaudeFill className={className} />;
-  if (provider === "Google") return <RiGeminiFill className={className} />;
-  return null;
-}
-
-function ModelSelector({
-  selectedModel,
-  onSelect,
-}: {
-  selectedModel: string;
-  onSelect: (id: string) => void;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const selected = AVAILABLE_MODELS.find((m) => m.id === selectedModel);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    if (isOpen) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen]);
-
-  if (!selected) return null;
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-2 rounded-md bg-card border border-border hover:border-primary transition-all duration-200 text-sm"
-      >
-        <ProviderIcon provider={selected.provider} className="w-4 h-4 text-foreground shrink-0" />
-        <span className="text-foreground">{selected.name}</span>
-        <ChevronDown
-          className={`w-3 h-3 text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
-        />
-      </button>
-
-      {isOpen && (
-        <div className="absolute bottom-full left-0 mb-2 py-1 bg-card border border-border rounded-md shadow-xl z-50 animate-fade-in min-w-[180px] max-h-[400px] overflow-y-auto">
-          {AVAILABLE_MODELS.map((model, index) => {
-            const prevModel = AVAILABLE_MODELS[index - 1];
-            const showDivider = index > 0 && prevModel.provider !== model.provider;
-            return (
-              <div key={model.id}>
-                {showDivider && <div className="my-1 mx-4 border-t border-border" />}
-                <button
-                  onClick={() => {
-                    onSelect(model.id);
-                    setIsOpen(false);
-                  }}
-                  className={`w-full px-4 py-1.5 flex items-center gap-3 text-left hover:bg-primary/10 transition-colors ${model.id === selectedModel ? "bg-primary/10" : ""}`}
-                >
-                  <ProviderIcon provider={model.provider} className="w-4 h-4 shrink-0 text-foreground" />
-                  <div className="text-sm ml-2 whitespace-nowrap">{model.name}</div>
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
@@ -835,7 +730,6 @@ function ConnectionError({ onRetry }: { onRetry: () => void }) {
 }
 
 export default function App() {
-  const [selectedModel, setSelectedModel] = useState<string>(AVAILABLE_MODELS[0].id);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -1143,7 +1037,6 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: userMessage.content,
-          model: selectedModel,
         }),
       });
 
@@ -1258,11 +1151,7 @@ export default function App() {
                     }}
                   />
                 )}
-                <div className="flex items-center justify-between">
-                  <ModelSelector
-                    selectedModel={selectedModel}
-                    onSelect={setSelectedModel}
-                  />
+                <div className="flex items-center justify-end">
                   <div className="flex items-center gap-2">
                     <div className="relative">
                       <button

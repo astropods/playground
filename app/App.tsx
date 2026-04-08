@@ -670,6 +670,11 @@ function ChatMessage({ message }: { message: Message }) {
                 components={{
                   pre: Pre,
                   code: CodeBlock,
+                  a: ({ children, href, ...props }) => (
+                    <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+                      {children}
+                    </a>
+                  ),
                 }}
               >
                 {message.content}
@@ -739,7 +744,9 @@ export default function App() {
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
 
   // Conversation state for messaging API
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(
+    new URLSearchParams(window.location.search).get('conversation')
+  );
   const eventSourceRef = useRef<EventSource | null>(null);
   const getPendingUserMsgIdRef = useRef<(() => string | null) | null>(null);
 
@@ -805,6 +812,54 @@ export default function App() {
         eventSourceRef.current.close();
       }
     };
+  }, []);
+
+  // Load conversation history when conversationId is pre-set from URL (e.g. after OAuth redirect)
+  useEffect(() => {
+    if (!conversationId) return;
+    const params = new URLSearchParams(window.location.search);
+    const replayLast = params.get('replay_last') === 'true';
+
+    const loadHistory = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/conversations/${conversationId}/history`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const loaded: Message[] = (data.messages ?? [])
+          .filter((m: any) => m.content?.trim() && m.content !== '__auth_complete__' && m.message_id)
+          .map((m: any) => ({
+            id: m.message_id,
+            role: m.user?.id === 'agent' ? 'assistant' : 'user' as 'user' | 'assistant',
+            content: m.content,
+          }));
+        if (loaded.length > 0) setMessages(loaded);
+
+        // After restoring history, re-send the last user message so the agent responds
+        if (replayLast) {
+          const lastUserMsg = [...loaded].reverse().find((m) => m.role === 'user');
+          if (lastUserMsg) {
+            const assistantMessageId = generateId();
+            setMessages((prev) => [...prev, {
+              id: assistantMessageId,
+              role: 'assistant',
+              content: '',
+              steps: [],
+              isStreaming: true,
+            }]);
+            setIsLoading(true);
+            setupEventSource(conversationId, assistantMessageId);
+            await fetch(`${API_URL}/api/conversations/${conversationId}/messages`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content: lastUserMsg.content }),
+            });
+          }
+        }
+      } catch {
+        // History unavailable, start fresh
+      }
+    };
+    loadHistory();
   }, []);
 
   const createConversation = async (): Promise<string> => {

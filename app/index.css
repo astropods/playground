@@ -226,6 +226,22 @@ pre,
   animation: spin 1s linear infinite;
 }
 
+/* Recording pulse */
+@keyframes recording-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+}
+
+.recording-pulse {
+  animation: recording-pulse 1.2s ease-in-out infinite;
+}
+
 /* Markdown Styles */
 .markdown-content {
   font-size: 0.9375rem;

@@ -1,6 +1,7 @@
 import { loadEnv, type Plugin, type ViteDevServer } from "vite";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { EventEmitter } from "node:events";
+import { WebSocketServer, type WebSocket } from "ws";
 
 type CoreMessage = { role: "user" | "assistant" | "system"; content: string };
 
@@ -52,6 +53,101 @@ export function devAgentPlugin(): Plugin {
     name: "dev-agent",
     configureServer(server: ViteDevServer) {
       const env = loadEnv("development", server.config.root, "");
+
+      // WebSocket server for audio streaming
+      const wss = new WebSocketServer({ noServer: true });
+
+      server.httpServer?.on("upgrade", (req, socket, head) => {
+        const url = req.url ?? "";
+        const audioId = extractConversationId(url, "/api/conversations/", "/audio");
+        if (!audioId) return; // let Vite handle HMR upgrades
+
+        wss.handleUpgrade(req, socket, head, (ws) => {
+          wss.emit("connection", ws, req, audioId);
+        });
+      });
+
+      wss.on("connection", async (ws: WebSocket, _req: IncomingMessage, conversationId: string) => {
+        const convo = conversations.get(conversationId);
+        if (!convo) {
+          ws.send(JSON.stringify({ type: "error", message: "Conversation not found" }));
+          ws.close();
+          return;
+        }
+
+        let audioReceived = false;
+
+        ws.on("message", async (data: Buffer | string, isBinary: boolean) => {
+          if (isBinary || Buffer.isBuffer(data)) {
+            // Binary frame = audio chunk, just accumulate
+            audioReceived = true;
+            return;
+          }
+
+          // Text frame = JSON control message
+          try {
+            const msg = JSON.parse(data.toString());
+            if (msg.type === "audio.config") {
+              // Config received, ready for audio
+              return;
+            }
+            if (msg.type === "audio.end") {
+              // Audio segment complete — generate response
+              if (!audioReceived) return;
+
+              const send = (event: string, payload: Record<string, unknown>) =>
+                ws.send(JSON.stringify({ type: event, ...payload }));
+
+              try {
+                const apiKey = env.OPENAI_API_KEY;
+                if (!apiKey) {
+                  send("error", { message: "OPENAI_API_KEY is not set." });
+                  return;
+                }
+
+                const { streamText } = await import("ai");
+                const { createOpenAI } = await import("@ai-sdk/openai");
+                const openai = createOpenAI({ apiKey });
+
+                // In dev mode, we simulate STT by telling the model it received audio
+                convo.messages.push({
+                  role: "user",
+                  content: "[The user sent a voice message. Respond naturally as if you understood them. Since this is a dev mock, acknowledge that you received audio input and respond helpfully.]",
+                });
+
+                let hadError = false;
+                const result = streamText({
+                  model: openai("gpt-4o"),
+                  messages: convo.messages,
+                  onError: ({ error }) => {
+                    hadError = true;
+                    const message = error instanceof Error ? error.message : String(error);
+                    send("error", { message });
+                  },
+                });
+
+                let fullResponse = "";
+                for await (const chunk of result.textStream) {
+                  fullResponse += chunk;
+                  send("chunk", { content: chunk, chunk_type: "delta" });
+                }
+
+                if (!hadError) {
+                  convo.messages.push({ role: "assistant", content: fullResponse });
+                  send("finish", {});
+                }
+              } catch (err: unknown) {
+                const message = err instanceof Error ? err.message : "Stream failed";
+                send("error", { message });
+              }
+
+              audioReceived = false;
+            }
+          } catch {
+            // ignore invalid JSON
+          }
+        });
+      });
 
       server.middlewares.use(async (req, res, next) => {
         const url = req.url ?? "";
@@ -132,7 +228,6 @@ export function devAgentPlugin(): Plugin {
 
             const body = await parseBody(req);
             const content = body.content as string;
-            const modelField = (body.model as string) ?? "";
 
             convo.messages.push({ role: "user", content });
             json(res, 200, { ok: true });
@@ -156,18 +251,10 @@ export function devAgentPlugin(): Plugin {
               const { z } = await import("zod");
               const openai = createOpenAI({ apiKey });
 
-              // Parse model: "openai/gpt-4o" → "gpt-4o", default to "gpt-4o"
-              let modelName = "gpt-4o";
-              if (modelField) {
-                const parts = modelField.split("/");
-                const candidate = parts.length > 1 ? parts[1] : parts[0];
-                if (candidate) modelName = candidate;
-              }
-
               let hadError = false;
 
               const result = streamText({
-                model: openai(modelName),
+                model: openai("gpt-4o"),
                 messages: convo.messages,
                 tools: {
                   randomNumber: tool({

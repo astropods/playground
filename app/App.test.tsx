@@ -189,57 +189,6 @@ describe("ThemeToggle", () => {
 });
 
 // ---------------------------------------------------------------------------
-// ModelSelector
-// ---------------------------------------------------------------------------
-describe("ModelSelector", () => {
-  it("shows default model and opens dropdown on click", async () => {
-    const user = userEvent.setup();
-    mockFetch();
-    render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
-    });
-
-    // Default model visible
-    expect(screen.getByText("GPT-5.2")).toBeInTheDocument();
-
-    // Open dropdown
-    await user.click(screen.getByText("GPT-5.2"));
-
-    // Other models visible
-    await waitFor(() => {
-      expect(screen.getByText("Claude Sonnet 4")).toBeInTheDocument();
-    });
-  });
-
-  it("selecting a model updates the selector", async () => {
-    const user = userEvent.setup();
-    mockFetch();
-    render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByText("GPT-5.2"));
-
-    await waitFor(() => {
-      expect(screen.getByText("Claude Sonnet 4")).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByText("Claude Sonnet 4"));
-
-    // Dropdown closes and new model is shown
-    await waitFor(() => {
-      // The selector button should now show "Claude Sonnet 4"
-      const buttons = screen.getAllByText("Claude Sonnet 4");
-      expect(buttons.length).toBeGreaterThanOrEqual(1);
-    });
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Chat input
 // ---------------------------------------------------------------------------
 describe("Chat input", () => {
@@ -389,7 +338,6 @@ describe("Chat message sending", () => {
     expect(msgCall).toBeDefined();
     const body = JSON.parse(msgCall![1]!.body as string);
     expect(body.content).toBe("Hello agent");
-    expect(body.model).toMatch(/^openai\//); // default model
   });
 
   it("user message appears immediately and input clears", async () => {

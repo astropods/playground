@@ -15,9 +15,9 @@ import {
   FileText,
   Sun,
   Moon,
+  Mic,
+  Square,
 } from "lucide-react";
-import { AiOutlineOpenAI } from "react-icons/ai";
-import { RiClaudeFill, RiGeminiFill } from "react-icons/ri";
 import Markdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -38,6 +38,7 @@ import astroLogo from "./astro-logo.svg";
 import astroLogoDark from "./astro-logo-dark.svg";
 import playgroundIllustration from "./playground-empty-state.svg";
 import playgroundIllustrationDark from "./playground-empty-state-dark.svg";
+import { useAudio } from "./hooks/useAudio";
 
 // Runtime config from window.__ENV__ (injected by nginx) or Vite env or default
 declare global {
@@ -76,6 +77,7 @@ type Message = {
   steps?: Step[];
   reasoning?: string;
   isStreaming?: boolean;
+  inputModality?: "text" | "audio";
 };
 
 type Step = {
@@ -84,39 +86,6 @@ type Step = {
   type: "tool";
   status: "running" | "completed";
 };
-
-type ModelOption = {
-  id: string;
-  name: string;
-  provider: string;
-  supportsReasoning?: boolean;
-};
-
-const AVAILABLE_MODELS: ModelOption[] = [
-  // OpenAI Frontier Models
-  { id: "openai/gpt-5.2", name: "GPT-5.2", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/gpt-5.2-pro", name: "GPT-5.2 Pro", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/gpt-5.1", name: "GPT-5.1", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/gpt-5", name: "GPT-5", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/gpt-5-mini", name: "GPT-5 Mini", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/gpt-5-nano", name: "GPT-5 Nano", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/gpt-4.1", name: "GPT-4.1", provider: "OpenAI" },
-  { id: "openai/gpt-4.1-mini", name: "GPT-4.1 Mini", provider: "OpenAI" },
-  { id: "openai/gpt-4.1-nano", name: "GPT-4.1 Nano", provider: "OpenAI" },
-  // OpenAI Reasoning Models
-  { id: "openai/o3", name: "o3", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/o4-mini", name: "o4 Mini", provider: "OpenAI", supportsReasoning: true },
-  { id: "openai/o3-mini", name: "o3 Mini", provider: "OpenAI", supportsReasoning: true },
-  // OpenAI Legacy Models
-  { id: "openai/gpt-4o", name: "GPT-4o", provider: "OpenAI" },
-  { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", provider: "OpenAI" },
-  // Anthropic Models
-  { id: "anthropic/claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "Anthropic" },
-  { id: "anthropic/claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku", provider: "Anthropic" },
-  // Google Models
-  { id: "google/gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "Google" },
-  { id: "google/gemini-2.5-pro-preview-05-06", name: "Gemini 2.5 Pro", provider: "Google" },
-];
 
 function generateId() {
   return Math.random().toString(36).substring(2, 15);
@@ -231,76 +200,6 @@ function CodeBlock({
       >
         {codeString}
       </SyntaxHighlighter>
-    </div>
-  );
-}
-
-function ProviderIcon({ provider, className }: { provider: string; className?: string }) {
-  if (provider === "OpenAI") return <AiOutlineOpenAI className={className} />;
-  if (provider === "Anthropic") return <RiClaudeFill className={className} />;
-  if (provider === "Google") return <RiGeminiFill className={className} />;
-  return null;
-}
-
-function ModelSelector({
-  selectedModel,
-  onSelect,
-}: {
-  selectedModel: string;
-  onSelect: (id: string) => void;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const selected = AVAILABLE_MODELS.find((m) => m.id === selectedModel);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    if (isOpen) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen]);
-
-  if (!selected) return null;
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-2 rounded-md bg-card border border-border hover:border-primary transition-all duration-200 text-sm"
-      >
-        <ProviderIcon provider={selected.provider} className="w-4 h-4 text-foreground shrink-0" />
-        <span className="text-foreground">{selected.name}</span>
-        <ChevronDown
-          className={`w-3 h-3 text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
-        />
-      </button>
-
-      {isOpen && (
-        <div className="absolute bottom-full left-0 mb-2 py-1 bg-card border border-border rounded-md shadow-xl z-50 animate-fade-in min-w-[180px] max-h-[400px] overflow-y-auto">
-          {AVAILABLE_MODELS.map((model, index) => {
-            const prevModel = AVAILABLE_MODELS[index - 1];
-            const showDivider = index > 0 && prevModel.provider !== model.provider;
-            return (
-              <div key={model.id}>
-                {showDivider && <div className="my-1 mx-4 border-t border-border" />}
-                <button
-                  onClick={() => {
-                    onSelect(model.id);
-                    setIsOpen(false);
-                  }}
-                  className={`w-full px-4 py-1.5 flex items-center gap-3 text-left hover:bg-primary/10 transition-colors ${model.id === selectedModel ? "bg-primary/10" : ""}`}
-                >
-                  <ProviderIcon provider={model.provider} className="w-4 h-4 shrink-0 text-foreground" />
-                  <div className="text-sm ml-2 whitespace-nowrap">{model.name}</div>
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
@@ -753,6 +652,19 @@ function ChatMessage({ message }: { message: Message }) {
               : "bg-card"
               }`}
           >
+            {message.inputModality === "audio" && isUser && (message.content === "[Listening...]" || message.content === "[Voice message]") ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Mic className="w-4 h-4" />
+                <span>{message.content === "[Listening...]" ? "Listening..." : "Voice message"}</span>
+              </div>
+            ) : message.inputModality === "audio" && isUser ? (
+              <div className="flex items-start gap-2">
+                <Mic className="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground" />
+                <div className="markdown-content">
+                  <Markdown>{message.content}</Markdown>
+                </div>
+              </div>
+            ) : (
             <div className="markdown-content">
               <Markdown
                 components={{
@@ -763,6 +675,7 @@ function ChatMessage({ message }: { message: Message }) {
                 {message.content}
               </Markdown>
             </div>
+            )}
             {message.isStreaming && (
               <span className="inline-block w-2 h-4 bg-primary rounded-sm ml-1 animate-pulse-soft" />
             )}
@@ -817,7 +730,6 @@ function ConnectionError({ onRetry }: { onRetry: () => void }) {
 }
 
 export default function App() {
-  const [selectedModel, setSelectedModel] = useState<string>(AVAILABLE_MODELS[0].id);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -829,6 +741,7 @@ export default function App() {
   // Conversation state for messaging API
   const [conversationId, setConversationId] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const getPendingUserMsgIdRef = useRef<(() => string | null) | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1016,6 +929,21 @@ export default function App() {
             );
             setIsLoading(false);
             break;
+
+          case "transcript": {
+            // Agent transcribed the user's audio — update the placeholder message
+            const userMsgId = data.message_id || getPendingUserMsgIdRef.current?.();
+            if (userMsgId) {
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === userMsgId
+                    ? { ...msg, content: data.text }
+                    : msg
+                )
+              );
+            }
+            break;
+          }
         }
       } catch {
         // Skip invalid JSON
@@ -1030,6 +958,7 @@ export default function App() {
     es.addEventListener('finish', handleEvent);
     es.addEventListener('error', handleEvent);
     es.addEventListener('connected', handleEvent);
+    es.addEventListener('transcript', handleEvent);
     es.onmessage = handleEvent; // Also handle unnamed events
 
     es.onerror = () => {
@@ -1043,6 +972,29 @@ export default function App() {
       setIsLoading(false);
     };
   };
+
+  const {
+    isListening,
+    isRecording,
+    recordingDuration,
+    voiceMode,
+    toggleListening,
+    toggleVoiceMode,
+    getPendingUserMsgId,
+  } = useAudio({
+    conversationId,
+    setConversationId,
+    createConversation,
+    setupEventSource,
+    setMessages,
+    setIsLoading,
+    isLoading,
+    generateId,
+    apiUrl: API_URL,
+  });
+
+  // Wire the getter ref so setupEventSource can access it
+  getPendingUserMsgIdRef.current = getPendingUserMsgId;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1085,7 +1037,6 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: userMessage.content,
-          model: selectedModel,
         }),
       });
 
@@ -1115,6 +1066,7 @@ export default function App() {
       handleSubmit(e);
     }
   };
+
 
   if (connectionError) {
     return (
@@ -1165,43 +1117,95 @@ export default function App() {
           {/* Input */}
           <div className="shrink-0 px-6 py-4 border-t border-border bg-card/50 backdrop-blur-sm">
             <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
-              <div className="relative flex flex-col gap-1 p-2 bg-muted rounded-[20px] border border-border focus-within:border-primary transition-colors">
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Send a message..."
-                  rows={1}
-                  className="w-full bg-transparent px-3 py-2 text-foreground placeholder:text-muted-foreground resize-none outline-none text-sm min-h-[72px] max-h-[200px]"
-                  style={{ height: "72px" }}
-                  onInput={(e) => {
-                    const target = e.target as HTMLTextAreaElement;
-                    target.style.height = "72px";
-                    target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
-                  }}
-                  disabled={isLoading}
-                />
-                <div className="flex items-center justify-between">
-                  <ModelSelector
-                    selectedModel={selectedModel}
-                    onSelect={setSelectedModel}
-                  />
-                  <button
-                    type="submit"
-                    disabled={!input.trim() || isLoading}
-                    className="shrink-0 w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 transition-all duration-200"
-                  >
-                    {isLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+              <div className={`relative flex flex-col gap-1 p-2 bg-muted rounded-[20px] border transition-colors ${isRecording ? "border-red-500" : isListening ? "border-amber-500" : "border-border focus-within:border-primary"}`}>
+                {(isListening || isRecording) ? (
+                  <div className="flex items-center justify-center gap-3 px-3 py-2 min-h-[72px]">
+                    {isRecording ? (
+                      <>
+                        <span className="recording-pulse w-3 h-3 rounded-full bg-red-500" />
+                        <span className="text-sm text-foreground">
+                          Speaking{recordingDuration > 0 ? ` — ${Math.floor(recordingDuration / 60)}:${(recordingDuration % 60).toString().padStart(2, "0")}` : "..."}
+                        </span>
+                      </>
                     ) : (
-                      <ArrowUp className="w-4 h-4" />
+                      <>
+                        <Mic className="w-4 h-4 text-amber-500 animate-pulse" />
+                        <span className="text-sm text-muted-foreground">Listening for speech...</span>
+                      </>
                     )}
-                  </button>
+                  </div>
+                ) : (
+                  <textarea
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Send a message..."
+                    rows={1}
+                    className="w-full bg-transparent px-3 py-2 text-foreground placeholder:text-muted-foreground resize-none outline-none text-sm min-h-[72px] max-h-[200px]"
+                    style={{ height: "72px" }}
+                    onInput={(e) => {
+                      const target = e.target as HTMLTextAreaElement;
+                      target.style.height = "72px";
+                      target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
+                    }}
+                  />
+                )}
+                <div className="flex items-center justify-end">
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={(isListening || isRecording) ? toggleListening : toggleListening}
+                        disabled={!isListening && !isRecording && isLoading}
+                        className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 ${
+                          isRecording
+                            ? "bg-red-500 hover:bg-red-600 text-white"
+                            : isListening
+                            ? "bg-amber-500 hover:bg-amber-600 text-white"
+                            : "bg-card border border-border text-muted-foreground hover:text-foreground hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                        }`}
+                        title={isRecording ? "Speech detected — click to stop" : isListening ? "Listening — click to stop" : "Start voice input"}
+                      >
+                        {isRecording ? <Square className="w-4 h-4" /> : <Mic className={`w-4 h-4 ${isListening ? "animate-pulse" : ""}`} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={toggleVoiceMode}
+                        className={`absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full border text-[8px] font-bold flex items-center justify-center transition-colors ${
+                          voiceMode === "continuous"
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-muted text-muted-foreground border-border hover:border-primary"
+                        }`}
+                        title={voiceMode === "single" ? "Switch to continuous mode" : "Switch to single utterance mode"}
+                      >
+                        {voiceMode === "continuous" ? "\u221E" : "1"}
+                      </button>
+                    </div>
+                    {!(isListening || isRecording) && (
+                      <button
+                        type="submit"
+                        disabled={!input.trim() || isLoading}
+                        className="shrink-0 w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 transition-all duration-200"
+                      >
+                        {isLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <ArrowUp className="w-4 h-4" />
+                        )}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
               <p className="text-center text-xs text-muted-foreground mt-3">
-                Press Enter to send, Shift+Enter for new line
+                {isRecording ? (
+                  <><span className="recording-pulse inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5" />Speaking{recordingDuration > 0 ? ` — ${Math.floor(recordingDuration / 60)}:${(recordingDuration % 60).toString().padStart(2, "0")}` : "..."}</>
+                ) : isListening ? (
+                  `Listening for speech${voiceMode === "continuous" ? " (continuous)" : ""}...`
+                ) : (
+                  "Press Enter to send, Shift+Enter for new line"
+                )}
               </p>
             </form>
           </div>

@@ -15,7 +15,7 @@
     "url": "https://github.com/astropods/playground.git"
   },
   "dependencies": {
-    "astro-theme": "file:../../../packages/astro-theme",
+    "@astropods/theme": "^0.1.1",
     "@dagrejs/dagre": "^1.1.4",
     "@fontsource-variable/geist": "^5.1.1",
     "@fontsource-variable/geist-mono": "^5.1.1",

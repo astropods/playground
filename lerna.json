@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/lerna/schemas/lerna-schema.json",
+  "private": false,
+  "npmClient": "npm",
+  "version": "independent",
+  "conventionalCommits": true,
+  "changelogPreset": {
+    "name": "conventional-changelog-conventionalcommits",
+    "preMajor": false
+  },
+  "ignoreChanges": [
+    "**/__tests__/**",
+    "**/tests/**",
+    "**/*.md"
+  ],
+  "allowBranch": [
+    "main",
+    "release/*"
+  ],
+  "packages": [
+    "."
+  ]
+}

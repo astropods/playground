@@ -46,7 +46,7 @@ jobs:
           bunx lerna version --yes --no-push
 
       - name: Publish
-        run: bunx lerna publish from-package --yes --access public
+        run: bunx lerna publish from-package --yes
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

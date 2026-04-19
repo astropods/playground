@@ -1,6 +1,6 @@
 {
   "name": "@astropods/playground",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "files": [
     "dist"
@@ -53,13 +53,13 @@
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
     "ai": "^4",
+    "conventional-changelog-conventionalcommits": "^7.0.0",
     "jsdom": "^26.1.0",
+    "lerna": "^9.0.4",
     "typescript": "~5.9.3",
     "vite-plugin-static-copy": "^3.2.0",
     "vitest": "^3.2.1",
     "ws": "^8.19.0",
-    "zod": "^3",
-    "conventional-changelog-conventionalcommits": "^7.0.0",
-    "lerna": "^9.0.4"
+    "zod": "^3"
   }
 }

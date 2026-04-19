@@ -1,0 +1,54 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  pull-requests: write
+
+jobs:
+  publish:
+    name: Build & Publish NPM Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.CI_APP_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build
+        run: bunx lerna run build
+
+      - name: Version
+        run: |
+          git config user.name "astro-ci-bot[bot]"
+          git config user.email "${{ secrets.CI_APP_ID }}+astro-ci-bot[bot]@users.noreply.github.com"
+          git fetch --tags
+          bunx lerna version --yes --no-push
+
+      - name: Publish
+        run: bunx lerna publish from-package --yes --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Push version commits and tags
+        run: git push origin HEAD --tags --force-with-lease

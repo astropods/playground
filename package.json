@@ -1,11 +1,15 @@
 {
-  "name": "playground",
+  "name": "@astropods/playground",
   "version": "0.0.0",
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b && vite build",
     "dev": "vite",
     "preview": "vite preview",
+    "prepublishOnly": "bun run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -b"
@@ -13,6 +17,10 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/astropods/playground.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
     "@astropods/theme": "^0.1.1",
@@ -50,6 +58,8 @@
     "vite-plugin-static-copy": "^3.2.0",
     "vitest": "^3.2.1",
     "ws": "^8.19.0",
-    "zod": "^3"
+    "zod": "^3",
+    "conventional-changelog-conventionalcommits": "^7.0.0",
+    "lerna": "^9.0.4"
   }
 }

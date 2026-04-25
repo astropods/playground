@@ -8,6 +8,7 @@ type Message = {
   reasoning?: string;
   isStreaming?: boolean;
   inputModality?: "text" | "audio";
+  timestamp: number;
 };
 
 type UseAudioOptions = {
@@ -111,10 +112,11 @@ export function useAudio({
     pendingUserMsgIdRef.current = userMessageId;
     pendingAssistantIdRef.current = assistantMessageId;
 
+    const now = Date.now();
     setMessages((prev) => [
       ...prev,
-      { id: userMessageId, role: "user" as const, content: "[Listening...]", inputModality: "audio" as const },
-      { id: assistantMessageId, role: "assistant" as const, content: "", steps: [], reasoning: "", isStreaming: true },
+      { id: userMessageId, role: "user" as const, content: "[Listening...]", inputModality: "audio" as const, timestamp: now },
+      { id: assistantMessageId, role: "assistant" as const, content: "", steps: [], reasoning: "", isStreaming: true, timestamp: now },
     ]);
     setIsLoading(true);
 

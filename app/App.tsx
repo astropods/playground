@@ -78,6 +78,7 @@ type Message = {
   reasoning?: string;
   isStreaming?: boolean;
   inputModality?: "text" | "audio";
+  timestamp: number;
 };
 
 type Step = {
@@ -89,6 +90,13 @@ type Step = {
 
 function generateId() {
   return Math.random().toString(36).substring(2, 15);
+}
+
+function formatMessageTimestamp(timestamp: number | undefined): string {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 // Custom code block theme based on oneDark but tweaked for our design
@@ -620,6 +628,8 @@ function ChatMessage({ message }: { message: Message }) {
   const isThinking = message.isStreaming && !hasContent;
   const allStepsCompleted = hasSteps && message.steps!.every((s) => s.status === "completed");
   const isProcessingToolResults = isThinking && allStepsCompleted;
+  const formattedTimestamp = formatMessageTimestamp(message.timestamp);
+  const showTimestamp = !message.isStreaming && (hasContent || hasSteps) && formattedTimestamp;
 
   return (
     <div
@@ -685,6 +695,14 @@ function ChatMessage({ message }: { message: Message }) {
               <span className="inline-block w-2 h-4 bg-primary rounded-sm ml-1 animate-pulse-soft" />
             )}
           </div>
+        )}
+
+        {showTimestamp && (
+          <span
+            className={`mt-1 text-xs text-muted-foreground ${isUser ? "text-right" : "text-left"}`}
+          >
+            {formattedTimestamp}
+          </span>
         )}
       </div>
     </div>
@@ -831,6 +849,7 @@ export default function App() {
             id: m.message_id,
             role: m.user?.id === 'agent' ? 'assistant' : 'user' as 'user' | 'assistant',
             content: m.content,
+            timestamp: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
           }));
         if (loaded.length > 0) setMessages(loaded);
 
@@ -845,6 +864,7 @@ export default function App() {
               content: '',
               steps: [],
               isStreaming: true,
+              timestamp: Date.now(),
             }]);
             setIsLoading(true);
             setupEventSource(conversationId, assistantMessageId);
@@ -1055,10 +1075,12 @@ export default function App() {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
+    const now = Date.now();
     const userMessage: Message = {
       id: generateId(),
       role: "user",
       content: input.trim(),
+      timestamp: now,
     };
 
     const assistantMessageId = generateId();
@@ -1069,6 +1091,7 @@ export default function App() {
       steps: [],
       reasoning: "",
       isStreaming: true,
+      timestamp: now,
     };
 
     setMessages((prev) => [...prev, userMessage, assistantMessage]);

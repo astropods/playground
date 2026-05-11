@@ -58,6 +58,10 @@ declare global {
 // Use relative URLs by default (works with nginx proxy), allow override via env
 const API_URL = window.__ENV__?.API_URL ?? import.meta.env.VITE_API_URL ?? "";
 
+// Soft cap on a single message. Generous for chat — typing past it is
+// uncommon and the browser will silently stop accepting input at the limit.
+const MAX_MESSAGE_LENGTH = 4000;
+
 type ToolConfig = {
   name: string;
   title: string;
@@ -1148,6 +1152,7 @@ export default function App() {
     isLoading,
     generateId,
     apiUrl: API_URL,
+    onError: setErrorBanner,
   });
 
   // Wire the getter ref so setupEventSource can access it
@@ -1316,6 +1321,7 @@ export default function App() {
                     onKeyDown={handleKeyDown}
                     placeholder="Send a message..."
                     rows={1}
+                    maxLength={MAX_MESSAGE_LENGTH}
                     className="w-full bg-transparent px-3 py-2 text-foreground placeholder:text-muted-foreground resize-none outline-none text-sm min-h-[72px] max-h-[200px]"
                     style={{ height: "72px" }}
                     onInput={(e) => {

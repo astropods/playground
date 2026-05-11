@@ -21,6 +21,10 @@ type UseAudioOptions = {
   isLoading: boolean;
   generateId: () => string;
   apiUrl: string;
+  // Called when an audio-path failure has no conversation turn to attach to
+  // (mic permission denied, WS open failed, recorder unsupported). Routes to
+  // the App-level error banner.
+  onError?: (message: string) => void;
 };
 
 export function useAudio({
@@ -33,6 +37,7 @@ export function useAudio({
   isLoading,
   generateId,
   apiUrl,
+  onError,
 }: UseAudioOptions) {
   const [isListening, setIsListening] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -131,10 +136,13 @@ export function useAudio({
         channels: 1,
         source: "browser",
       }));
-    } catch {
-      // WS failed — speech will still be captured by VAD
+    } catch (err) {
+      // WS open failure: VAD will keep firing but the audio bytes have
+      // nowhere to go, so the user would never see a response.
+      console.error("Audio WebSocket open failed:", err);
+      onError?.("Couldn't connect to the audio stream. Please try again.");
     }
-  }, [createConversation, openAudioWs, setupEventSource, setConversationId, setMessages, setIsLoading, generateId]);
+  }, [createConversation, openAudioWs, setupEventSource, setConversationId, setMessages, setIsLoading, generateId, onError]);
 
   const handleSpeechEnd = useCallback(() => {
     if (!speechActiveRef.current) return;
@@ -198,8 +206,9 @@ export function useAudio({
                 }
               };
               recorder.start(250);
-            } catch {
-              // MediaRecorder failed
+            } catch (err) {
+              console.error("MediaRecorder init failed:", err);
+              onError?.("Audio recording isn't supported in this browser.");
             }
           }
         },
@@ -215,8 +224,11 @@ export function useAudio({
       setIsListening(true);
     } catch (err) {
       console.error("VAD initialization failed:", err);
+      // Most common cause is the user denying mic permission; the prompt
+      // surfaces both that and any browser-side incompatibility.
+      onError?.("Microphone access is required for voice input. Check your browser permissions and try again.");
     }
-  }, [isListening, isLoading, conversationId, cleanup, handleSpeechStart, handleSpeechEnd]);
+  }, [isListening, isLoading, conversationId, cleanup, handleSpeechStart, handleSpeechEnd, onError]);
 
   const toggleVoiceMode = useCallback(() => {
     const next = voiceMode === "single" ? "continuous" : "single";

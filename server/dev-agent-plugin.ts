@@ -1,4 +1,4 @@
-import { loadEnv, type Plugin, type ViteDevServer } from "vite";
+import { type Plugin, type ViteDevServer } from "vite";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { EventEmitter } from "node:events";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -14,6 +14,30 @@ type Conversation = {
 };
 
 const conversations = new Map<string, Conversation>();
+
+// Dummy reply generator. The dev plugin doesn't call any LLM — it streams a
+// canned response so the playground works out of the box without an API key
+// and gives predictable input for UI work. `emit` follows the same
+// `(event, data)` shape used by both the SSE and audio paths so this helper
+// is reusable across both.
+async function streamDummyReply(
+  emit: (event: string, data: Record<string, unknown>) => void,
+  userInput: string,
+): Promise<string> {
+  const snippet = userInput.slice(0, 80).replace(/\s+/g, " ").trim();
+  const reply = `(dev mock) You said: "${snippet}". This is a canned reply from the dev plugin — no LLM is being called. Wire a real backend for live answers.`;
+  const CHUNK_SIZE = 18;
+  for (let i = 0; i < reply.length; i += CHUNK_SIZE) {
+    emit("chunk", {
+      type: "chunk",
+      content: reply.slice(i, i + CHUNK_SIZE),
+      chunk_type: "delta",
+    });
+    await new Promise((r) => setTimeout(r, 30));
+  }
+  emit("finish", { type: "finish" });
+  return reply;
+}
 
 function parseBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -81,8 +105,6 @@ export function devAgentPlugin(): Plugin {
       },
     },
     configureServer(server: ViteDevServer) {
-      const env = loadEnv("development", server.config.root, "");
-
       // WebSocket server for audio streaming
       const wss = new WebSocketServer({ noServer: true });
 
@@ -127,44 +149,11 @@ export function devAgentPlugin(): Plugin {
               const send = (event: string, payload: Record<string, unknown>) =>
                 ws.send(JSON.stringify({ type: event, ...payload }));
 
+              const transcript = "[voice message]";
+              convo.messages.push({ role: "user", content: transcript });
               try {
-                const apiKey = env.OPENAI_API_KEY;
-                if (!apiKey) {
-                  send("error", { message: "OPENAI_API_KEY is not set." });
-                  return;
-                }
-
-                const { streamText } = await import("ai");
-                const { createOpenAI } = await import("@ai-sdk/openai");
-                const openai = createOpenAI({ apiKey });
-
-                // In dev mode, we simulate STT by telling the model it received audio
-                convo.messages.push({
-                  role: "user",
-                  content: "[The user sent a voice message. Respond naturally as if you understood them. Since this is a dev mock, acknowledge that you received audio input and respond helpfully.]",
-                });
-
-                let hadError = false;
-                const result = streamText({
-                  model: openai("gpt-4o"),
-                  messages: convo.messages,
-                  onError: ({ error }) => {
-                    hadError = true;
-                    const message = error instanceof Error ? error.message : String(error);
-                    send("error", { message });
-                  },
-                });
-
-                let fullResponse = "";
-                for await (const chunk of result.textStream) {
-                  fullResponse += chunk;
-                  send("chunk", { content: chunk, chunk_type: "delta" });
-                }
-
-                if (!hadError) {
-                  convo.messages.push({ role: "assistant", content: fullResponse });
-                  send("finish", {});
-                }
+                const reply = await streamDummyReply(send, transcript);
+                convo.messages.push({ role: "assistant", content: reply });
               } catch (err: unknown) {
                 const message = err instanceof Error ? err.message : "Stream failed";
                 send("error", { message });
@@ -296,82 +285,8 @@ export function devAgentPlugin(): Plugin {
               convo.emitter.emit("sse", { event, data });
 
             try {
-              const apiKey = env.OPENAI_API_KEY;
-              if (!apiKey) {
-                emit("error", {
-                  type: "error",
-                  message:
-                    "OPENAI_API_KEY is not set. Create a .env file in packages/astro-playground with your key.",
-                });
-                return;
-              }
-
-              const { streamText, tool } = await import("ai");
-              const { createOpenAI } = await import("@ai-sdk/openai");
-              const { z } = await import("zod");
-              const openai = createOpenAI({ apiKey });
-
-              let hadError = false;
-
-              const result = streamText({
-                model: openai("gpt-4o"),
-                messages: convo.messages,
-                tools: {
-                  randomNumber: tool({
-                    description:
-                      "Generates a random number between min and max (inclusive).",
-                    parameters: z.object({
-                      min: z.number().describe("Minimum value"),
-                      max: z.number().describe("Maximum value"),
-                    }),
-                    execute: async ({ min, max }) => {
-                      return {
-                        value:
-                          Math.floor(Math.random() * (max - min + 1)) + min,
-                      };
-                    },
-                  }),
-                },
-                maxSteps: 5,
-                onChunk: ({ chunk }) => {
-                  if (chunk.type === "tool-call") {
-                    emit("step-start", {
-                      type: "step-start",
-                      step_id: chunk.toolCallId,
-                      name: chunk.toolName,
-                    });
-                  } else if (chunk.type === "tool-result") {
-                    emit("step-end", {
-                      type: "step-end",
-                      step_id: chunk.toolCallId,
-                    });
-                  }
-                },
-                onError: ({ error }) => {
-                  hadError = true;
-                  const message =
-                    error instanceof Error ? error.message : String(error);
-                  emit("error", { type: "error", message });
-                },
-              });
-
-              let fullResponse = "";
-              for await (const chunk of result.textStream) {
-                fullResponse += chunk;
-                emit("chunk", {
-                  type: "chunk",
-                  content: chunk,
-                  chunk_type: "delta",
-                });
-              }
-
-              if (!hadError) {
-                convo.messages.push({
-                  role: "assistant",
-                  content: fullResponse,
-                });
-                emit("finish", { type: "finish" });
-              }
+              const reply = await streamDummyReply(emit, content);
+              convo.messages.push({ role: "assistant", content: reply });
             } catch (err: unknown) {
               const message =
                 err instanceof Error ? err.message : "Stream failed";

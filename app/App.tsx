@@ -786,6 +786,11 @@ export default function App() {
   // to the inline banner instead so the app stays usable.
   const [startupFailed, setStartupFailed] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  // True while the SSE stream is closed and we're waiting to retry. Cleared
+  // on successful (re)open or when we give up and route the error to the
+  // assistant bubble.
+  const [streamReconnecting, setStreamReconnecting] = useState(false);
+  const reconnectTimerRef = useRef<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("chat");
   const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
@@ -851,11 +856,13 @@ export default function App() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // Cleanup EventSource on unmount
+  // Cleanup EventSource and any pending reconnect timer on unmount.
   useEffect(() => {
     return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
+      if (eventSourceRef.current) eventSourceRef.current.close();
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
       }
     };
   }, []);
@@ -930,13 +937,19 @@ export default function App() {
   };
 
   const setupEventSource = (convId: string, assistantMessageId: string) => {
-    // Close existing EventSource if any
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
+    // Close any prior EventSource and cancel pending reconnect.
+    if (eventSourceRef.current) eventSourceRef.current.close();
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
     }
+    setStreamReconnecting(false);
 
-    const es = new EventSource(`${API_URL}/api/conversations/${convId}/stream`);
-    eventSourceRef.current = es;
+    // Reconnect parameters. Backoff doubles per attempt, capped at 5s.
+    const MAX_ATTEMPTS = 5;
+    const BASE_DELAY_MS = 250;
+    const MAX_DELAY_MS = 5000;
+    let attempt = 0;
 
     // Handle message events (both named and unnamed)
     const handleEvent = (event: MessageEvent) => {
@@ -1057,27 +1070,64 @@ export default function App() {
       }
     };
 
-    // Listen to all event types
-    es.addEventListener('chunk', handleEvent);
-    es.addEventListener('step-start', handleEvent);
-    es.addEventListener('step-end', handleEvent);
-    es.addEventListener('reasoning-delta', handleEvent);
-    es.addEventListener('finish', handleEvent);
-    es.addEventListener('error', handleEvent);
-    es.addEventListener('connected', handleEvent);
-    es.addEventListener('transcript', handleEvent);
-    es.onmessage = handleEvent; // Also handle unnamed events
-
-    es.onerror = () => {
+    const giveUp = () => {
+      setStreamReconnecting(false);
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantMessageId
-            ? { ...msg, isStreaming: false }
-            : msg
-        )
+            ? {
+                ...msg,
+                content: msg.content || "Lost connection to the server. Please try again.",
+                isStreaming: false,
+              }
+            : msg,
+        ),
       );
       setIsLoading(false);
     };
+
+    const open = () => {
+      const es = new EventSource(`${API_URL}/api/conversations/${convId}/stream`);
+      eventSourceRef.current = es;
+
+      es.onopen = () => {
+        // A successful (re)open resets the backoff so future hiccups within
+        // this same stream get their full 5 attempts.
+        attempt = 0;
+        setStreamReconnecting(false);
+      };
+
+      es.addEventListener("chunk", handleEvent);
+      es.addEventListener("step-start", handleEvent);
+      es.addEventListener("step-end", handleEvent);
+      es.addEventListener("reasoning-delta", handleEvent);
+      es.addEventListener("finish", handleEvent);
+      es.addEventListener("error", handleEvent);
+      es.addEventListener("connected", handleEvent);
+      es.addEventListener("transcript", handleEvent);
+      es.onmessage = handleEvent;
+
+      es.onerror = () => {
+        // Close the broken stream — the browser's auto-retry would otherwise
+        // keep flapping in the background with no UI feedback.
+        es.close();
+        if (eventSourceRef.current === es) eventSourceRef.current = null;
+
+        if (attempt >= MAX_ATTEMPTS) {
+          giveUp();
+          return;
+        }
+        const delay = Math.min(BASE_DELAY_MS * 2 ** attempt, MAX_DELAY_MS);
+        attempt++;
+        setStreamReconnecting(true);
+        reconnectTimerRef.current = window.setTimeout(() => {
+          reconnectTimerRef.current = null;
+          open();
+        }, delay);
+      };
+    };
+
+    open();
   };
 
   const {
@@ -1205,6 +1255,17 @@ export default function App() {
 
       {errorBanner && (
         <ErrorBanner message={errorBanner} onDismiss={() => setErrorBanner(null)} />
+      )}
+
+      {streamReconnecting && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="shrink-0 px-6 py-2 border-b border-border bg-muted text-muted-foreground flex items-center gap-2 text-sm"
+        >
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span>Reconnecting to the stream…</span>
+        </div>
       )}
 
       {viewMode === "config" ? (

@@ -61,6 +61,7 @@ class MockEventSource {
   private listeners: Record<string, ((evt: MessageEvent) => void)[]> = {};
   onmessage: ((evt: MessageEvent) => void) | null = null;
   onerror: ((evt: Event) => void) | null = null;
+  onopen: ((evt: Event) => void) | null = null;
 
   constructor(url: string) {
     this.url = url;
@@ -93,6 +94,11 @@ class MockEventSource {
 
   simulateError() {
     if (this.onerror) this.onerror(new Event("error"));
+  }
+
+  simulateOpen() {
+    this.readyState = 1;
+    if (this.onopen) this.onopen(new Event("open"));
   }
 }
 

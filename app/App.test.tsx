@@ -563,6 +563,89 @@ describe("Error states during messaging", () => {
 });
 
 // ---------------------------------------------------------------------------
+// SSE reconnect with backoff
+// ---------------------------------------------------------------------------
+describe("SSE reconnect", () => {
+  it("on stream error, shows the reconnecting indicator and opens a new stream after backoff", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { es } = await renderAndSendMessage("Hi");
+      const original = es;
+
+      act(() => {
+        es.simulateError();
+      });
+
+      // Indicator appears immediately
+      await waitFor(() => {
+        expect(screen.getByRole("status")).toHaveTextContent(/reconnecting/i);
+      });
+
+      // Advance past the first backoff window (250ms)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+
+      // A fresh EventSource should have been created
+      expect(MockEventSource.latest).not.toBe(original);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the reconnecting indicator when the new stream opens", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { es } = await renderAndSendMessage("Hi");
+      act(() => {
+        es.simulateError();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      const fresh = MockEventSource.latest!;
+      expect(fresh).not.toBe(es);
+
+      act(() => {
+        fresh.simulateOpen();
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByRole("status")).not.toBeInTheDocument();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("after exhausting retries, surfaces the failure in the assistant bubble", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await renderAndSendMessage("Hi");
+      // 6 errors: 5 retries then give-up. Each retry needs its own
+      // simulateError on the *new* MockEventSource.
+      for (let i = 0; i < 6; i++) {
+        const current = MockEventSource.latest!;
+        act(() => {
+          current.simulateError();
+        });
+        // Drain the backoff window (5s cap covers every step)
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(6000);
+        });
+      }
+
+      await waitFor(() => {
+        expect(screen.getByText(/lost connection to the server/i)).toBeInTheDocument();
+      });
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Banner — used for errors with no conversation turn to attach to
 // ---------------------------------------------------------------------------
 describe("Error banner", () => {

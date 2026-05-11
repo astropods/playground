@@ -2,6 +2,7 @@ import { loadEnv, type Plugin, type ViteDevServer } from "vite";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { EventEmitter } from "node:events";
 import { WebSocketServer, type WebSocket } from "ws";
+import { faults, matchFault, type FaultRule } from "./faults";
 
 type CoreMessage = { role: "user" | "assistant" | "system"; content: string };
 
@@ -48,9 +49,37 @@ function extractConversationId(
   return id || null;
 }
 
+// Injected into the playground page so faults can be triggered from the
+// browser console: `__faults.deny()`, `__faults.unavail()`, etc. Kept in
+// sync with the admin endpoints above. Dev-only because the plugin sets
+// `apply: 'serve'`.
+const FAULT_HELPER_SCRIPT = `
+  window.__faults = {
+    add: (rule) => fetch('/__dev/faults', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rule),
+    }).then((r) => r.json()),
+    clear: () => fetch('/__dev/faults', { method: 'DELETE' }).then((r) => r.json()),
+    list: () => fetch('/__dev/faults').then((r) => r.json()),
+    deny:    (target = 'messages', count = 1) => window.__faults.add({ path: '/api/conversations/*/' + target, method: 'POST', status: 403, count }),
+    unavail: (target = 'messages', count = 1) => window.__faults.add({ path: '/api/conversations/*/' + target, method: 'POST', status: 503, count }),
+    crash:   (target = 'messages', count = 1) => window.__faults.add({ path: '/api/conversations/*/' + target, method: 'POST', status: 500, count }),
+    authExpired: (target = 'messages', count = 1) => window.__faults.add({ path: '/api/conversations/*/' + target, method: 'POST', status: 401, count }),
+  };
+  console.info('[dev] fault injection ready — see window.__faults');
+`;
+
 export function devAgentPlugin(): Plugin {
   return {
     name: "dev-agent",
+    apply: "serve",
+    transformIndexHtml: {
+      order: "pre",
+      handler() {
+        return [{ tag: "script", injectTo: "head", children: FAULT_HELPER_SCRIPT }];
+      },
+    },
     configureServer(server: ViteDevServer) {
       const env = loadEnv("development", server.config.root, "");
 
@@ -152,8 +181,39 @@ export function devAgentPlugin(): Plugin {
       server.middlewares.use(async (req, res, next) => {
         const url = req.url ?? "";
         const method = req.method ?? "GET";
+        const pathOnly = url.split("?")[0];
 
         try {
+          // Fault-injection admin endpoints.
+          if (pathOnly === "/__dev/faults") {
+            if (method === "GET") return json(res, 200, faults);
+            if (method === "POST") {
+              const body = (await parseBody(req)) as Partial<FaultRule>;
+              if (typeof body.path !== "string" || typeof body.status !== "number") {
+                return json(res, 400, { error: "path (string) and status (number) required" });
+              }
+              const rule: FaultRule = {
+                path: body.path,
+                method: typeof body.method === "string" ? body.method : undefined,
+                status: body.status,
+                body: body.body,
+                count: typeof body.count === "number" ? body.count : 1,
+              };
+              faults.push(rule);
+              return json(res, 200, rule);
+            }
+            if (method === "DELETE") {
+              faults.length = 0;
+              return json(res, 200, { ok: true });
+            }
+          }
+
+          // Apply matching fault before any real handler runs.
+          const fault = matchFault(pathOnly, method);
+          if (fault) {
+            return json(res, fault.status, fault.body ?? { error: `injected fault (${fault.status})` });
+          }
+
           // GET /health
           if (url === "/health" && method === "GET") {
             return json(res, 200, { status: "ok" });

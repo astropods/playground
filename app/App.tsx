@@ -39,6 +39,12 @@ import astroLogoDark from "./astro-logo-dark.svg";
 import playgroundIllustration from "./playground-empty-state.svg";
 import playgroundIllustrationDark from "./playground-empty-state-dark.svg";
 import { useAudio } from "./hooks/useAudio";
+import {
+  request,
+  userMessageForError,
+  AuthRequiredError,
+  ForbiddenError,
+} from "./api/client";
 
 // Runtime config from window.__ENV__ (injected by nginx) or Vite env or default
 declare global {
@@ -727,6 +733,25 @@ function EmptyState() {
   );
 }
 
+function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  return (
+    <div
+      role="alert"
+      className="shrink-0 px-6 py-2 border-b border-destructive/30 bg-destructive/10 text-destructive flex items-center gap-3"
+    >
+      <AlertCircle className="w-4 h-4 shrink-0" />
+      <span className="text-sm flex-1">{message}</span>
+      <button
+        onClick={onDismiss}
+        aria-label="Dismiss error"
+        className="text-xs px-2 py-1 rounded hover:bg-destructive/20 transition-colors"
+      >
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
 function ConnectionError({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
@@ -756,7 +781,11 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [connectionError, setConnectionError] = useState(false);
+  // startupFailed: true only when the initial /health probe fails on mount.
+  // Renders the full-screen ConnectionError block. Other runtime errors go
+  // to the inline banner instead so the app stays usable.
+  const [startupFailed, setStartupFailed] = useState(false);
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("chat");
   const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
@@ -782,18 +811,15 @@ export default function App() {
     }
   }, [viewMode]);
 
-  // Health check for connection
+  // Health check. On the startup probe a failure renders the full-screen
+  // ConnectionError; subsequent manual retries clear startupFailed on success.
   const checkConnection = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/health`);
-      if (res.ok) {
-        setConnectionError(false);
-        return true;
-      }
-      setConnectionError(true);
-      return false;
+      await request(`${API_URL}/health`);
+      setStartupFailed(false);
+      return true;
     } catch {
-      setConnectionError(true);
+      setStartupFailed(true);
       return false;
     }
   }, []);
@@ -802,16 +828,18 @@ export default function App() {
     checkConnection();
   }, [checkConnection]);
 
-  // Fetch agent config for the Config tab
+  // Fetch agent config for the Config tab. Missing config is normal (404),
+  // surface other failures to the banner so users know the tab is empty
+  // because of a real error rather than missing data.
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/agent/config`);
-        if (res.ok) {
-          setAgentConfig(await res.json());
-        }
-      } catch {
-        // Agent config endpoint not available
+        const cfg = await request<AgentConfig>(`${API_URL}/api/agent/config`, {
+          nullOn404: true,
+        });
+        if (cfg) setAgentConfig(cfg);
+      } catch (err) {
+        setErrorBanner(userMessageForError(err));
       } finally {
         setIsLoadingConfig(false);
       }
@@ -840,9 +868,11 @@ export default function App() {
 
     const loadHistory = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/conversations/${conversationId}/history`);
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await request<{ messages: any[] }>(
+          `${API_URL}/api/conversations/${conversationId}/history`,
+          { nullOn404: true },
+        );
+        if (!data) return;
         const loaded: Message[] = (data.messages ?? [])
           .filter((m: any) => m.content?.trim() && m.content !== '__auth_complete__' && m.message_id)
           .map((m: any) => ({
@@ -868,32 +898,34 @@ export default function App() {
             }]);
             setIsLoading(true);
             setupEventSource(conversationId, assistantMessageId);
-            await fetch(`${API_URL}/api/conversations/${conversationId}/messages`, {
+            await request(`${API_URL}/api/conversations/${conversationId}/messages`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ content: lastUserMsg.content }),
             });
           }
         }
-      } catch {
-        // History unavailable, start fresh
+      } catch (err) {
+        // Auth-relevant failures should surface; transient/not-found stays silent
+        // since the user can just start a new conversation.
+        if (err instanceof AuthRequiredError || err instanceof ForbiddenError) {
+          setErrorBanner(userMessageForError(err));
+        }
       }
     };
     loadHistory();
   }, []);
 
   const createConversation = async (): Promise<string> => {
-    const res = await fetch(`${API_URL}/api/conversations`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-
-    if (!res.ok) {
-      throw new Error("Failed to create conversation");
-    }
-
-    const data = await res.json();
+    const data = await request<{ conversation_id: string }>(
+      `${API_URL}/api/conversations`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    );
+    if (!data) throw new Error("conversation create returned empty body");
     return data.conversation_id;
   };
 
@@ -1110,7 +1142,7 @@ export default function App() {
       setupEventSource(convId, assistantMessageId);
 
       // Send the message
-      const res = await fetch(`${API_URL}/api/conversations/${convId}/messages`, {
+      await request(`${API_URL}/api/conversations/${convId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1118,23 +1150,22 @@ export default function App() {
         }),
       });
 
-      if (!res.ok) {
-        throw new Error("Failed to send message");
-      }
+      // Clear any stale banner on a successful send.
+      setErrorBanner(null);
     } catch (error) {
+      // Surface the error in the assistant bubble that's already on screen —
+      // a top banner would duplicate the same text two ways. Banner stays
+      // reserved for errors that have no conversation turn to attach to
+      // (e.g. config fetch, history load).
+      const userMsg = userMessageForError(error);
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantMessageId
-            ? {
-              ...msg,
-              content: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
-              isStreaming: false,
-            }
+            ? { ...msg, content: userMsg, isStreaming: false }
             : msg
         )
       );
       setIsLoading(false);
-      setConnectionError(true);
     }
   };
 
@@ -1146,7 +1177,7 @@ export default function App() {
   };
 
 
-  if (connectionError) {
+  if (startupFailed) {
     return (
       <div className="h-full flex flex-col bg-background">
         <ConnectionError onRetry={checkConnection} />
@@ -1171,6 +1202,10 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {errorBanner && (
+        <ErrorBanner message={errorBanner} onDismiss={() => setErrorBanner(null)} />
+      )}
 
       {viewMode === "config" ? (
         <AgentConfigView config={agentConfig} isLoading={isLoadingConfig} />

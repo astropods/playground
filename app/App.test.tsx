@@ -7,11 +7,23 @@ import { MockEventSource } from "./test/setup";
 // ---------------------------------------------------------------------------
 // Global fetch mock
 // ---------------------------------------------------------------------------
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+// Per-endpoint result. `ok` keeps the old shape for cheap success/failure;
+// `status` lets a test simulate a specific HTTP code (e.g. 403 for forbidden).
+type EndpointResult = { ok: boolean; status?: number; body?: unknown };
+
 function mockFetch(overrides?: {
-  health?: { ok: boolean };
+  health?: EndpointResult;
   config?: object | null;
-  conversations?: { ok: boolean };
-  messages?: { ok: boolean };
+  configError?: number;
+  conversations?: EndpointResult;
+  messages?: EndpointResult;
 }) {
   const health = overrides?.health ?? { ok: true };
   const config =
@@ -21,6 +33,7 @@ function mockFetch(overrides?: {
           systemPrompt: "You are a helpful assistant.",
           tools: [{ name: "search", title: "Search", description: "Search the web", type: "other" }],
         };
+  const configError = overrides?.configError;
   const conversations = overrides?.conversations ?? { ok: true };
   const messages = overrides?.messages ?? { ok: true };
 
@@ -28,29 +41,30 @@ function mockFetch(overrides?: {
     "fetch",
     vi.fn((url: string, init?: RequestInit) => {
       if (url.endsWith("/health")) {
-        if (!health.ok) return Promise.reject(new Error("Network error"));
-        return Promise.resolve({ ok: true } as Response);
+        if (!health.ok && health.status === undefined)
+          return Promise.reject(new Error("Network error"));
+        return Promise.resolve(jsonResponse({ status: "ok" }, health.status ?? 200));
       }
       if (url.endsWith("/api/agent/config")) {
-        return Promise.resolve({
-          ok: config !== null,
-          json: () => Promise.resolve(config),
-        } as Response);
+        if (configError !== undefined) return Promise.resolve(jsonResponse({}, configError));
+        if (config === null) return Promise.resolve(jsonResponse(null, 404));
+        return Promise.resolve(jsonResponse(config));
       }
       if (url.endsWith("/api/conversations") && init?.method === "POST") {
-        if (!conversations.ok)
+        if (!conversations.ok && conversations.status === undefined)
           return Promise.reject(new Error("Failed to create conversation"));
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ conversation_id: "test-conv-123" }),
-        } as Response);
+        if (!conversations.ok)
+          return Promise.resolve(jsonResponse(conversations.body ?? {}, conversations.status));
+        return Promise.resolve(jsonResponse({ conversation_id: "test-conv-123" }));
       }
       if (url.includes("/api/conversations/") && url.endsWith("/messages") && init?.method === "POST") {
-        if (!messages.ok)
+        if (!messages.ok && messages.status === undefined)
           return Promise.reject(new Error("Failed to send message"));
-        return Promise.resolve({ ok: true } as Response);
+        if (!messages.ok)
+          return Promise.resolve(jsonResponse(messages.body ?? {}, messages.status));
+        return Promise.resolve(jsonResponse({}));
       }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+      return Promise.resolve(jsonResponse({}));
     }),
   );
 }
@@ -489,45 +503,86 @@ describe("Keyboard shortcuts", () => {
 // Error states during messaging
 // ---------------------------------------------------------------------------
 describe("Error states during messaging", () => {
-  it("conversation creation failure shows error and connection error screen", async () => {
+  async function submit(text: string) {
     const user = userEvent.setup();
-    mockFetch({ conversations: { ok: false } });
     render(<App />);
-
     await waitFor(() => {
       expect(screen.getByText("Agent Playground")).toBeInTheDocument();
     });
-
     const textarea = screen.getByPlaceholderText("Send a message...");
-    await user.type(textarea, "Will fail");
+    await user.type(textarea, text);
     await user.click(
       textarea.closest("form")!.querySelector('button[type="submit"]')!,
     );
+    return user;
+  }
 
-    // Should eventually show the connection error screen
+  // Send-path errors render inside the assistant bubble instead of the banner —
+  // showing both would duplicate the same text. The full-screen blocker is also
+  // off-limits for runtime failures (reserved for startup health probe).
+  it("network failure on conversation create renders in the assistant bubble", async () => {
+    mockFetch({ conversations: { ok: false } });
+    await submit("Will fail");
+
     await waitFor(() => {
-      expect(screen.getByText("Connection Error")).toBeInTheDocument();
+      expect(screen.getByText(/can't reach the server/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("Connection Error")).not.toBeInTheDocument();
+  });
+
+  it("403 on message send renders the authorization message in the bubble", async () => {
+    mockFetch({ messages: { ok: false, status: 403 } });
+    await submit("Will fail on send");
+
+    await waitFor(() => {
+      expect(screen.getByText(/not authorized/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("503 on message send renders the unavailable message in the bubble", async () => {
+    mockFetch({ messages: { ok: false, status: 503 } });
+    await submit("Will fail on send");
+
+    await waitFor(() => {
+      expect(screen.getByText(/temporarily unavailable/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("500 on message send renders the generic server-error message in the bubble", async () => {
+    mockFetch({ messages: { ok: false, status: 500 } });
+    await submit("Will fail on send");
+
+    await waitFor(() => {
+      expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Banner — used for errors with no conversation turn to attach to
+// ---------------------------------------------------------------------------
+describe("Error banner", () => {
+  it("500 on /api/agent/config shows the inline banner", async () => {
+    mockFetch({ configError: 500 });
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/something went wrong/i);
     });
   });
 
-  it("message send failure shows error and connection error screen", async () => {
+  it("banner can be dismissed", async () => {
     const user = userEvent.setup();
-    mockFetch({ messages: { ok: false } });
+    mockFetch({ configError: 500 });
     render(<App />);
-
     await waitFor(() => {
-      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
+      expect(screen.getByRole("alert")).toBeInTheDocument();
     });
-
-    const textarea = screen.getByPlaceholderText("Send a message...");
-    await user.type(textarea, "Will fail on send");
-    await user.click(
-      textarea.closest("form")!.querySelector('button[type="submit"]')!,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText("Connection Error")).toBeInTheDocument();
-    });
+    await user.click(screen.getByRole("button", { name: "Dismiss error" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
 

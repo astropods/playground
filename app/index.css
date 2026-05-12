@@ -322,9 +322,6 @@ pre,
   background: var(--color-slate-700);
 }
 
-.markdown-content.is-streaming > p:last-child {
-  display: inline;
-}
 
 .markdown-content pre {
   margin: 1em 0;

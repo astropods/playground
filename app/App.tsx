@@ -688,7 +688,7 @@ function ChatMessage({ message }: { message: Message }) {
                 </div>
               </div>
             ) : (
-            <div className={`markdown-content ${message.isStreaming ? "is-streaming" : ""}`}>
+            <div className="markdown-content">
               <Markdown
                 components={{
                   pre: Pre,
@@ -702,10 +702,10 @@ function ChatMessage({ message }: { message: Message }) {
               >
                 {message.content}
               </Markdown>
-              {message.isStreaming && (
-                <span className="inline-block align-text-bottom w-2 h-4 bg-primary rounded-sm ml-1 animate-pulse-soft" />
-              )}
             </div>
+            )}
+            {message.isStreaming && (
+              <span className="inline-block w-2 h-4 bg-primary rounded-sm ml-1 animate-pulse-soft" />
             )}
           </div>
         )}

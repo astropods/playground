@@ -568,7 +568,7 @@ function AgentConfigView({
 
 function StepIndicator({ step }: { step: Step }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg border border-border text-sm">
+    <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 rounded-lg border border-border text-sm">
       {step.status === "running" ? (
         <Loader2 className="w-4 h-4 text-primary animate-spin" />
       ) : (
@@ -672,7 +672,7 @@ function ChatMessage({ message }: { message: Message }) {
           <div
             className={`px-4 py-3 rounded-md ${isUser
               ? "bg-slate-200 dark:bg-slate-800 text-foreground"
-              : "bg-slate-100 dark:bg-slate-900"
+              : "bg-white dark:bg-slate-900"
               }`}
           >
             {message.inputModality === "audio" && isUser && (message.content === "[Listening...]" || message.content === "[Voice message]") ? (
@@ -1316,7 +1316,7 @@ export default function App() {
     <TooltipProvider>
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
-      <header className="shrink-0 px-6 py-4 border-b border-border bg-card/50 backdrop-blur-sm relative z-10">
+      <header className="shrink-0 px-6 py-4 border-b border-border bg-background relative z-10">
         <div className="max-w-3xl mx-auto grid grid-cols-3 items-center">
           <div className="flex items-center gap-3">
             <img src={astroLogo} alt="Astro" className="h-5 dark:hidden" />
@@ -1351,7 +1351,7 @@ export default function App() {
       ) : (
         <>
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-6 py-6">
+          <div className="flex-1 overflow-y-auto px-6 py-6 bg-slate-100 dark:bg-slate-950">
             <div className={`max-w-3xl mx-auto ${messages.length === 0 ? "h-full flex flex-col" : ""}`}>
               {messages.length === 0 ? (
                 <EmptyState />
@@ -1367,7 +1367,7 @@ export default function App() {
           </div>
 
           {/* Input */}
-          <div className="shrink-0 px-6 py-4 border-t border-border bg-card/50 backdrop-blur-sm">
+          <div className="shrink-0 px-6 py-4 border-t border-border bg-background">
             <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
               <div className={`relative flex flex-col gap-1 p-2 bg-muted rounded-[20px] border transition-colors ${isRecording ? "border-red-500" : isListening ? "border-amber-500" : "border-border focus-within:border-primary"}`}>
                 {(isListening || isRecording) ? (

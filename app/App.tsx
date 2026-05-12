@@ -785,76 +785,7 @@ function ConnectionError({ onRetry }: { onRetry: () => void }) {
 }
 
 export default function App() {
-  const [messages, setMessages] = useState<Message[]>(
-    import.meta.env.DEV ? [
-      {
-        id: "mock-1",
-        role: "user",
-        content: "Can you help me write a Python function to sort a list?",
-        timestamp: Date.now() - 60000 * 5,
-      },
-      {
-        id: "mock-2",
-        role: "assistant",
-        content: "Sure! Here's a simple example:\n\n```python\ndef sort_list(items):\n    return sorted(items)\n\n# Example\nprint(sort_list([3, 1, 4, 1, 5, 9]))\n```\n\nYou can also sort in reverse with `sorted(items, reverse=True)`.",
-        timestamp: Date.now() - 60000 * 4,
-      },
-      {
-        id: "mock-3",
-        role: "user",
-        content: "What's the weather like in Paris?",
-        timestamp: Date.now() - 60000 * 3,
-      },
-      {
-        id: "mock-4",
-        role: "assistant",
-        content: "The current temperature in Paris is 18°C with partly cloudy skies.",
-        steps: [
-          { id: "step-1", name: "get_weather", type: "tool", status: "completed" },
-        ],
-        timestamp: Date.now() - 60000 * 2,
-      },
-      {
-        id: "mock-5",
-        role: "user",
-        content: "What time is it?",
-        inputModality: "audio",
-        timestamp: Date.now() - 60000,
-      },
-      {
-        id: "mock-6",
-        role: "assistant",
-        content: "It's currently 4:03 PM.",
-        reasoning: "The user asked for the current time. I should return the local time.",
-        timestamp: Date.now() - 60000 * 2,
-      },
-      {
-        id: "mock-7",
-        role: "user",
-        content: "Can you explain how large language models work in detail?",
-        timestamp: Date.now() - 60000,
-      },
-      {
-        id: "mock-8",
-        role: "assistant",
-        content: "Large language models (LLMs) are neural networks trained on vast amounts of text data. They work by predicting the next token in a sequence, learning statistical patterns across billions of parameters.\n\nThe core architecture is the transformer, introduced in the 2017 paper \"Attention Is All You Need\". It relies on a mechanism called self-attention, which allows the model to weigh the relevance of every word in a sequence against every other word — regardless of distance.\n\nDuring training, the model processes enormous corpora of text and adjusts its weights via backpropagation to minimize prediction error. This process happens across thousands of GPUs over weeks or months.\n\nAt inference time, the model generates text autoregressively — one token at a time — sampling from a probability distribution over its vocabulary. Temperature and top-p sampling control how deterministic or creative the output is.\n\nFine-tuning and RLHF (Reinforcement Learning from Human Feedback) are then used to align the base model to follow instructions and behave safely. This is what turns a raw language model into something like a useful assistant.",
-        timestamp: Date.now() - 30000,
-      },
-      {
-        id: "mock-8b",
-        role: "user",
-        content: "What's the difference between GPT and BERT?",
-        timestamp: Date.now() - 20000,
-      },
-      {
-        id: "mock-9",
-        role: "assistant",
-        content: "The transformer architecture consists of an encoder and decoder, though many modern LLMs use decoder-only designs",
-        isStreaming: true,
-        timestamp: Date.now(),
-      },
-    ] : []
-  );
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   // startupFailed: true only when the initial /health probe fails on mount.

@@ -39,6 +39,7 @@ import astroLogoDark from "./astro-logo-dark.svg";
 import playgroundIllustration from "./playground-empty-state.svg";
 import playgroundIllustrationDark from "./playground-empty-state-dark.svg";
 import { useAudio } from "./hooks/useAudio";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "./Tooltip";
 import {
   request,
   userMessageForError,
@@ -119,11 +120,13 @@ const codeTheme = {
     padding: 0,
     fontSize: "0.85em",
     lineHeight: 1.6,
+    boxShadow: "none",
   },
   'code[class*="language-"]': {
     ...oneDark['code[class*="language-"]'],
     background: "transparent",
     fontSize: "inherit",
+    textShadow: "none",
   },
 };
 
@@ -179,8 +182,8 @@ function CodeBlock({
 
   // Code block with syntax highlighting
   return (
-    <div className="code-block-wrapper group relative">
-      <div className="code-block-header flex items-center justify-between px-4 py-2 bg-card border-b border-border rounded-t-lg">
+    <div className="code-block-wrapper group relative rounded-lg overflow-hidden border border-border">
+      <div className="code-block-header flex items-center justify-between px-4 py-2 bg-card border-b border-border">
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
           {language}
         </span>
@@ -191,8 +194,8 @@ function CodeBlock({
         >
           {copied ? (
             <>
-              <CheckCheck className="w-3.5 h-3.5 text-green-500" />
-              <span className="text-green-500">Copied!</span>
+              <CheckCheck className="w-3.5 h-3.5 text-success" />
+              <span className="text-success">Copied!</span>
             </>
           ) : (
             <>
@@ -206,7 +209,7 @@ function CodeBlock({
         style={codeTheme}
         language={language}
         PreTag="div"
-        className="code-block-content !bg-background !rounded-t-none !rounded-b-lg !m-0 !p-4"
+        className="code-block-content !bg-background !rounded-none !m-0 !p-4 subpixel-antialiased"
         showLineNumbers={codeString.split("\n").length > 3}
         lineNumberStyle={{
           minWidth: "2.5em",
@@ -521,7 +524,7 @@ function AgentConfigView({
         {/* System Prompt Section */}
         <div className="bg-muted border border-border rounded-xl overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-3 bg-card border-b border-border">
-            <FileText className="w-4 h-4 text-primary" />
+            <FileText className="w-4 h-4 text-muted-foreground" />
             <h3 className="text-sm font-medium text-foreground">
               System Prompt
             </h3>
@@ -536,7 +539,7 @@ function AgentConfigView({
         {/* Tools Section */}
         <div className="bg-muted border border-border rounded-xl overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-3 bg-card border-b border-border">
-            <Wrench className="w-4 h-4 text-primary" />
+            <Wrench className="w-4 h-4 text-muted-foreground" />
             <h3 className="text-sm font-medium text-foreground">
               Available Tools
             </h3>
@@ -569,7 +572,7 @@ function StepIndicator({ step }: { step: Step }) {
       {step.status === "running" ? (
         <Loader2 className="w-4 h-4 text-primary animate-spin" />
       ) : (
-        <Check className="w-4 h-4 text-green-500" />
+        <Check className="w-4 h-4 text-success" />
       )}
       <Wrench className="w-3.5 h-3.5 text-muted-foreground" />
       <span className="text-foreground/80">{step.name}</span>
@@ -668,8 +671,8 @@ function ChatMessage({ message }: { message: Message }) {
         {hasContent && (
           <div
             className={`px-4 py-3 rounded-md ${isUser
-              ? "bg-stone-200 dark:bg-stone-800 text-foreground"
-              : "bg-card"
+              ? "bg-slate-200 dark:bg-slate-800 text-foreground"
+              : "bg-slate-100 dark:bg-slate-900"
               }`}
           >
             {message.inputModality === "audio" && isUser && (message.content === "[Listening...]" || message.content === "[Voice message]") ? (
@@ -685,7 +688,7 @@ function ChatMessage({ message }: { message: Message }) {
                 </div>
               </div>
             ) : (
-            <div className="markdown-content">
+            <div className={`markdown-content ${message.isStreaming ? "is-streaming" : ""}`}>
               <Markdown
                 components={{
                   pre: Pre,
@@ -699,10 +702,10 @@ function ChatMessage({ message }: { message: Message }) {
               >
                 {message.content}
               </Markdown>
+              {message.isStreaming && (
+                <span className="inline-block align-text-bottom w-2 h-4 bg-primary rounded-sm ml-1 animate-pulse-soft" />
+              )}
             </div>
-            )}
-            {message.isStreaming && (
-              <span className="inline-block w-2 h-4 bg-primary rounded-sm ml-1 animate-pulse-soft" />
             )}
           </div>
         )}
@@ -782,7 +785,76 @@ function ConnectionError({ onRetry }: { onRetry: () => void }) {
 }
 
 export default function App() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(
+    import.meta.env.DEV ? [
+      {
+        id: "mock-1",
+        role: "user",
+        content: "Can you help me write a Python function to sort a list?",
+        timestamp: Date.now() - 60000 * 5,
+      },
+      {
+        id: "mock-2",
+        role: "assistant",
+        content: "Sure! Here's a simple example:\n\n```python\ndef sort_list(items):\n    return sorted(items)\n\n# Example\nprint(sort_list([3, 1, 4, 1, 5, 9]))\n```\n\nYou can also sort in reverse with `sorted(items, reverse=True)`.",
+        timestamp: Date.now() - 60000 * 4,
+      },
+      {
+        id: "mock-3",
+        role: "user",
+        content: "What's the weather like in Paris?",
+        timestamp: Date.now() - 60000 * 3,
+      },
+      {
+        id: "mock-4",
+        role: "assistant",
+        content: "The current temperature in Paris is 18°C with partly cloudy skies.",
+        steps: [
+          { id: "step-1", name: "get_weather", type: "tool", status: "completed" },
+        ],
+        timestamp: Date.now() - 60000 * 2,
+      },
+      {
+        id: "mock-5",
+        role: "user",
+        content: "What time is it?",
+        inputModality: "audio",
+        timestamp: Date.now() - 60000,
+      },
+      {
+        id: "mock-6",
+        role: "assistant",
+        content: "It's currently 4:03 PM.",
+        reasoning: "The user asked for the current time. I should return the local time.",
+        timestamp: Date.now() - 60000 * 2,
+      },
+      {
+        id: "mock-7",
+        role: "user",
+        content: "Can you explain how large language models work in detail?",
+        timestamp: Date.now() - 60000,
+      },
+      {
+        id: "mock-8",
+        role: "assistant",
+        content: "Large language models (LLMs) are neural networks trained on vast amounts of text data. They work by predicting the next token in a sequence, learning statistical patterns across billions of parameters.\n\nThe core architecture is the transformer, introduced in the 2017 paper \"Attention Is All You Need\". It relies on a mechanism called self-attention, which allows the model to weigh the relevance of every word in a sequence against every other word — regardless of distance.\n\nDuring training, the model processes enormous corpora of text and adjusts its weights via backpropagation to minimize prediction error. This process happens across thousands of GPUs over weeks or months.\n\nAt inference time, the model generates text autoregressively — one token at a time — sampling from a probability distribution over its vocabulary. Temperature and top-p sampling control how deterministic or creative the output is.\n\nFine-tuning and RLHF (Reinforcement Learning from Human Feedback) are then used to align the base model to follow instructions and behave safely. This is what turns a raw language model into something like a useful assistant.",
+        timestamp: Date.now() - 30000,
+      },
+      {
+        id: "mock-8b",
+        role: "user",
+        content: "What's the difference between GPT and BERT?",
+        timestamp: Date.now() - 20000,
+      },
+      {
+        id: "mock-9",
+        role: "assistant",
+        content: "The transformer architecture consists of an encoder and decoder, though many modern LLMs use decoder-only designs",
+        isStreaming: true,
+        timestamp: Date.now(),
+      },
+    ] : []
+  );
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   // startupFailed: true only when the initial /health probe fails on mount.
@@ -1241,6 +1313,7 @@ export default function App() {
   }
 
   return (
+    <TooltipProvider>
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
       <header className="shrink-0 px-6 py-4 border-b border-border bg-card/50 backdrop-blur-sm relative z-10">
@@ -1349,18 +1422,26 @@ export default function App() {
                       >
                         {isRecording ? <Square className="w-4 h-4" /> : <Mic className={`w-4 h-4 ${isListening ? "animate-pulse" : ""}`} />}
                       </button>
-                      <button
-                        type="button"
-                        onClick={toggleVoiceMode}
-                        className={`absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full border text-[8px] font-bold flex items-center justify-center transition-colors ${
-                          voiceMode === "continuous"
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-muted text-muted-foreground border-border hover:border-primary"
-                        }`}
-                        title={voiceMode === "single" ? "Switch to continuous mode" : "Switch to single utterance mode"}
-                      >
-                        {voiceMode === "continuous" ? "\u221E" : "1"}
-                      </button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={toggleVoiceMode}
+                            className={`absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full border text-[9px] font-medium flex items-center justify-center transition-colors ${
+                              voiceMode === "continuous"
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-card text-muted-foreground border-border hover:border-primary"
+                            }`}
+                          >
+                            {voiceMode === "continuous" ? "\u221E" : "1\u00D7"}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          {voiceMode === "continuous"
+                            ? "Stays listening between turns"
+                            : "Records once, then stops"}
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
                     {!(isListening || isRecording) && (
                       <button
@@ -1392,5 +1473,6 @@ export default function App() {
         </>
       )}
     </div>
+    </TooltipProvider>
   );
 }

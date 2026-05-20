@@ -563,6 +563,17 @@ export function devAgentPlugin(): Plugin {
             convo.messages.push({ role: "user", content });
             json(res, 200, { ok: true });
 
+            // The client opens its EventSource in parallel with this POST, so
+            // the GET /stream subscriber may not have attached by the time we
+            // start emitting. Wait briefly so the first chunk isn't lost —
+            // this matters most for instant-emit scenarios (e.g. the `error`
+            // path that fires a single event with no delays). Production
+            // backends don't have this race since they hold the POST open
+            // until the stream finishes.
+            for (let i = 0; i < 100 && convo.emitter.listenerCount("sse") === 0; i++) {
+              await new Promise((r) => setTimeout(r, 10));
+            }
+
             const emit = (event: string, data: Record<string, unknown>) =>
               convo.emitter.emit("sse", { event, data });
 

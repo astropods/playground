@@ -3,7 +3,9 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
     "target": "ES2022",
     "lib": [
-      "ES2023"
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
     ],
     "module": "ESNext",
     "skipLibCheck": true,
@@ -20,6 +22,8 @@
   },
   "include": [
     "vite.config.ts",
-    "server/**/*.ts"
+    "playwright.config.ts",
+    "server/**/*.ts",
+    "tests/e2e/**/*.ts"
   ]
 }

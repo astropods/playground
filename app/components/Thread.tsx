@@ -261,10 +261,17 @@ export function Thread({ messages, isStreaming, onSend, audio }: ThreadProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // isSticky tracks whether the user is currently parked near the bottom. We
-  // only auto-scroll while sticky; otherwise we show a button instead of
-  // yanking them away from whatever they're reading.
+  // isSticky tracks whether the auto-scroll loop should keep snapping to the
+  // bottom. It flips OFF only on real user gestures (wheel / touch / key),
+  // never on programmatic scrolls — otherwise the scroll event from our own
+  // scrollIntoView races with the next chunk's content growth and we'd lose
+  // stickiness mid-stream.
   const isStickyRef = useRef(true);
+  // Set while the user is actively scrolling so the scroll handler knows
+  // a position change is intentional rather than a side-effect of our own
+  // scrollIntoView. Cleared on a short delay after the last gesture.
+  const userScrollingRef = useRef(false);
+  const userScrollingTimeoutRef = useRef<number | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
 
   const hasMessages = messages.length > 0;
@@ -279,12 +286,26 @@ export function Thread({ messages, isStreaming, onSend, audio }: ThreadProps) {
     }
   }, [isListening, isRecording]);
 
-  // Watch the scroll container so we can flip stickiness as the user scrolls.
+  // Wire user-gesture + scroll listeners on the scroll container. The
+  // gesture listeners mark a 200ms window during which scroll events are
+  // attributed to the user; outside that window scroll events are assumed
+  // to come from our own scrollIntoView and don't update stickiness.
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
+    const markUserScrolling = () => {
+      userScrollingRef.current = true;
+      if (userScrollingTimeoutRef.current !== null) {
+        window.clearTimeout(userScrollingTimeoutRef.current);
+      }
+      userScrollingTimeoutRef.current = window.setTimeout(() => {
+        userScrollingRef.current = false;
+      }, 200);
+    };
+
     const onScroll = () => {
+      if (!userScrollingRef.current) return; // programmatic — leave isSticky alone
       const { scrollTop, scrollHeight, clientHeight } = container;
       const atBottom = scrollHeight - scrollTop - clientHeight < 50;
       isStickyRef.current = atBottom;
@@ -292,11 +313,25 @@ export function Thread({ messages, isStreaming, onSend, audio }: ThreadProps) {
     };
 
     container.addEventListener("scroll", onScroll, { passive: true });
-    return () => container.removeEventListener("scroll", onScroll);
+    container.addEventListener("wheel", markUserScrolling, { passive: true });
+    container.addEventListener("touchstart", markUserScrolling, { passive: true });
+    container.addEventListener("touchmove", markUserScrolling, { passive: true });
+    container.addEventListener("keydown", markUserScrolling);
+
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      container.removeEventListener("wheel", markUserScrolling);
+      container.removeEventListener("touchstart", markUserScrolling);
+      container.removeEventListener("touchmove", markUserScrolling);
+      container.removeEventListener("keydown", markUserScrolling);
+      if (userScrollingTimeoutRef.current !== null) {
+        window.clearTimeout(userScrollingTimeoutRef.current);
+      }
+    };
   }, []);
 
-  // Auto-scroll on new content only when the user is parked at the bottom.
-  // Instant scroll (not smooth) to avoid race conditions with rapid updates.
+  // Auto-scroll on new content while sticky. Instant scroll (not smooth)
+  // to avoid race conditions with rapid streaming updates.
   useEffect(() => {
     if (isStickyRef.current) {
       bottomRef.current?.scrollIntoView();

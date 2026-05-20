@@ -135,12 +135,14 @@ test.describe("Sticky scroll", () => {
 
     const container = scrollContainer(page);
 
-    // Scroll a couple hundred pixels up from the bottom — that's enough to
-    // exceed the 50px sticky threshold in Thread.tsx.
-    await container.evaluate((el) => {
-      const h = el as HTMLElement;
-      h.scrollTop = Math.max(0, h.scrollTop - 400);
-    });
+    // Use a real wheel gesture (not a programmatic scrollTop change) — the
+    // chat hook only flips out of "sticky" mode on user gestures so it can
+    // ignore the scroll events caused by its own auto-scroll. Move the mouse
+    // over the messages area first so the wheel hits the right element.
+    const box = await container.boundingBox();
+    if (!box) throw new Error("scroll container has no bounding box");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -600);
 
     // The scroll-to-bottom button should appear once we leave the sticky zone.
     const scrollBtn = page.getByRole("button", { name: "Scroll to latest" });
@@ -148,7 +150,8 @@ test.describe("Sticky scroll", () => {
 
     // Clicking it returns us to the bottom. Smooth-scroll takes a moment;
     // poll instead of using a fixed timeout so the test is robust to varying
-    // animation durations.
+    // animation durations. Tolerance matches the 50px sticky threshold in
+    // Thread.tsx — any closer is "at bottom" as far as the app is concerned.
     await scrollBtn.click();
     await expect
       .poll(
@@ -159,7 +162,7 @@ test.describe("Sticky scroll", () => {
           }),
         { timeout: 5_000 },
       )
-      .toBeLessThan(20);
+      .toBeLessThan(50);
   });
 });
 

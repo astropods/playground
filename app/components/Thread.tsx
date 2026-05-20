@@ -21,6 +21,15 @@ import playgroundIllustrationDark from "../playground-empty-state-dark.svg";
 const mathPlugin = createMathPlugin({ singleDollarTextMath: true });
 const streamdownPlugins = { math: mathPlugin, mermaid };
 
+// Hide the fullscreen control on mermaid + table panels: it didn't behave
+// reliably in our embed context, and dropping it also normalises the
+// remaining icon order to [download, copy] across both code blocks and
+// mermaid blocks (streamdown ships them in that order natively).
+const streamdownControls = {
+  mermaid: { fullscreen: false },
+  table: { fullscreen: false },
+} as const;
+
 const MAX_MESSAGE_LENGTH = 4000;
 
 // Reasoning that fades out once the agent stops thinking. Kept here (rather
@@ -176,6 +185,7 @@ function AssistantMessage({
                 isAnimating={isPartAnimating}
                 parseIncompleteMarkdown={isPartAnimating}
                 plugins={streamdownPlugins}
+                controls={streamdownControls}
               >
                 {text}
               </Streamdown>

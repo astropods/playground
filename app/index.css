@@ -267,23 +267,20 @@ pre,
   animation: recording-pulse 1.2s ease-in-out infinite;
 }
 
-/* Streamdown mermaid panel — the bundled mermaid container reserves a 200px
-   intrinsic size, and its inner render target carries a min-h-28 flex column
-   without centering. For short horizontal diagrams (LR flowcharts) this leaves
-   a tall empty band above the SVG. Tighten the reserved space and center the
-   SVG so the panel hugs the diagram regardless of aspect ratio. */
-[data-streamdown="code-block"][data-language="mermaid"] {
-  contain-intrinsic-size: auto !important;
-}
-
-[data-streamdown="code-block"][data-language="mermaid"] > div:last-child {
+/* Streamdown mermaid panel — the inner render target carries a min-h-28 flex
+   column without centering. For short horizontal diagrams (LR flowcharts) the
+   SVG drops to the bottom of that reserved band, leaving an empty stripe
+   above. Center the SVG so the panel hugs the diagram regardless of aspect
+   ratio. */
+[data-streamdown="mermaid-block"] > div:last-child {
   min-height: 0 !important;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0.5rem;
 }
 
-[data-streamdown="code-block"][data-language="mermaid"] svg {
+[data-streamdown="mermaid-block"] svg {
   max-width: 100%;
   height: auto;
 }

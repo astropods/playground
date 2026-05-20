@@ -1,15 +1,5 @@
 import { useState, useRef, useCallback, useEffect, type RefObject } from "react";
-
-type Message = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  steps?: { id: string; name: string; type: "tool"; status: "running" | "completed" }[];
-  reasoning?: string;
-  isStreaming?: boolean;
-  inputModality?: "text" | "audio";
-  timestamp: number;
-};
+import type { Message } from "./useChat";
 
 type UseAudioOptions = {
   conversationId: string | null;
@@ -120,8 +110,23 @@ export function useAudio({
     const now = Date.now();
     setMessages((prev) => [
       ...prev,
-      { id: userMessageId, role: "user" as const, content: "[Listening...]", inputModality: "audio" as const, timestamp: now },
-      { id: assistantMessageId, role: "assistant" as const, content: "", steps: [], reasoning: "", isStreaming: true, timestamp: now },
+      {
+        id: userMessageId,
+        role: "user" as const,
+        content: "[Listening...]",
+        parts: [{ type: "text", content: "[Listening...]" }],
+        inputModality: "audio" as const,
+        timestamp: now,
+      },
+      {
+        id: assistantMessageId,
+        role: "assistant" as const,
+        content: "",
+        parts: [],
+        reasoning: "",
+        isStreaming: true,
+        timestamp: now,
+      },
     ]);
     setIsLoading(true);
 

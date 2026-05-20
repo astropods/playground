@@ -197,6 +197,28 @@ pre,
   }
 }
 
+@keyframes tool-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tool-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
 @keyframes spin {
   from {
     transform: rotate(0deg);
@@ -243,6 +265,27 @@ pre,
 
 .recording-pulse {
   animation: recording-pulse 1.2s ease-in-out infinite;
+}
+
+/* Streamdown mermaid panel — the bundled mermaid container reserves a 200px
+   intrinsic size, and its inner render target carries a min-h-28 flex column
+   without centering. For short horizontal diagrams (LR flowcharts) this leaves
+   a tall empty band above the SVG. Tighten the reserved space and center the
+   SVG so the panel hugs the diagram regardless of aspect ratio. */
+[data-streamdown="code-block"][data-language="mermaid"] {
+  contain-intrinsic-size: auto !important;
+}
+
+[data-streamdown="code-block"][data-language="mermaid"] > div:last-child {
+  min-height: 0 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+[data-streamdown="code-block"][data-language="mermaid"] svg {
+  max-width: 100%;
+  height: auto;
 }
 
 /* Markdown Styles */

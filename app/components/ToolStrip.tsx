@@ -70,28 +70,40 @@ export function ToolStrip({ tools }: { tools: ToolCallPart[] }) {
     if (activeTool && displayedTool) {
       pendingRef.current = activeTool;
       setAnimating("exit");
-      const t = setTimeout(() => {
+      // Two-stage transition: exit → swap displayed tool → enter → reset. The
+      // inner timer is captured so unmount mid-transition clears both.
+      let inner: ReturnType<typeof setTimeout> | undefined;
+      const outer = setTimeout(() => {
         setDisplayedTool(pendingRef.current);
         pendingRef.current = null;
         setAnimating("enter");
-        setTimeout(() => setAnimating(null), 200);
+        inner = setTimeout(() => setAnimating(null), 200);
       }, 150);
-      return () => clearTimeout(t);
+      return () => {
+        clearTimeout(outer);
+        if (inner) clearTimeout(inner);
+      };
     }
   }, [activeTool?.toolCallId, allDone]);
 
   // When the last tool finishes, exit the streaming tool then reveal the
-  // summary. Skip the exit hop if there's nothing currently shown.
+  // summary. Skip the exit hop if there's nothing currently shown. Same
+  // two-stage pattern as the rotate effect; both timers are cleared on
+  // unmount so a fast nav-away doesn't fire setState on a dead component.
   useEffect(() => {
     if (!allDone || showSummary) return;
     if (displayedTool) {
       setAnimating("exit");
-      const t = setTimeout(() => {
+      let inner: ReturnType<typeof setTimeout> | undefined;
+      const outer = setTimeout(() => {
         setShowSummary(true);
         setAnimating("enter");
-        setTimeout(() => setAnimating(null), 200);
+        inner = setTimeout(() => setAnimating(null), 200);
       }, 150);
-      return () => clearTimeout(t);
+      return () => {
+        clearTimeout(outer);
+        if (inner) clearTimeout(inner);
+      };
     }
     setShowSummary(true);
   }, [allDone]);

@@ -81,10 +81,6 @@ export function useChat({ apiUrl, onError }: UseChatOptions) {
   const streamDoneRef = useRef(false);
   const rafRef = useRef<number>(0);
 
-  // Mirror messages to a ref so the RAF tick can read without re-subscribing
-  const messagesRef = useRef<Message[]>([]);
-  messagesRef.current = messages;
-
   // Flush the smoothed window into the active assistant message's trailing
   // text part. If the trailing part is a tool-call (or parts is empty), push
   // a fresh text part — otherwise we'd overwrite text that was already

@@ -390,8 +390,14 @@ describe("SSE streaming events", () => {
       es.simulateEvent("chunk", { type: "chunk", content: "world!" });
     });
 
+    // Streamdown splits animated text per word, so each word lives in its own
+    // <span>. Match against the surrounding paragraph's normalized textContent
+    // so the assertion is robust to that split.
     await waitFor(() => {
-      expect(screen.getByText("Hello world!")).toBeInTheDocument();
+      const para = Array.from(document.querySelectorAll("p")).find(
+        (p) => p.textContent?.replace(/\s+/g, " ").trim() === "Hello world!",
+      );
+      expect(para).toBeTruthy();
     });
   });
 

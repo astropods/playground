@@ -197,6 +197,28 @@ pre,
   }
 }
 
+@keyframes tool-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tool-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
 @keyframes spin {
   from {
     transform: rotate(0deg);
@@ -436,7 +458,14 @@ pre,
   max-width: 100%;
   height: auto;
   border-radius: 8px;
-  margin: 1em 0;
+  vertical-align: middle;
+}
+
+/* Images inside a paragraph are flowing with text — drop the block-level
+   margin and let line-height handle vertical rhythm. Images on a line by
+   themselves still get spacing from the surrounding block elements. */
+.markdown-content p img {
+  margin: 0;
 }
 
 

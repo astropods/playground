@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, ArrowDown, Loader2, Mic, Square, Brain } from "lucide-react";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
@@ -11,6 +11,8 @@ import { mermaid } from "@streamdown/mermaid";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip";
 import type { Message, ToolCallPart } from "../hooks/useChat";
 import { ToolStrip } from "./ToolStrip";
+import type { Skill } from "../hooks/useSkills";
+import { SlashCommandMenu } from "./SlashCommandMenu";
 import playgroundIllustration from "../playground-empty-state.svg";
 import playgroundIllustrationDark from "../playground-empty-state-dark.svg";
 
@@ -245,6 +247,10 @@ export type ThreadProps = {
   messages: Message[];
   isStreaming: boolean;
   onSend: (text: string) => void;
+  // Slash-command support. Optional — when omitted, typing `/` is a normal
+  // character with no popover.
+  skills?: Skill[];
+  onInvokeSkill?: (skill: string, args: string) => void;
   // Audio controls — optional so the Thread is usable without voice.
   audio?: {
     isListening: boolean;
@@ -256,8 +262,19 @@ export type ThreadProps = {
   };
 };
 
-export function Thread({ messages, isStreaming, onSend, audio }: ThreadProps) {
+export function Thread({
+  messages,
+  isStreaming,
+  onSend,
+  skills,
+  onInvokeSkill,
+  audio,
+}: ThreadProps) {
   const [input, setInput] = useState("");
+  const [slashHighlightedIndex, setSlashHighlightedIndex] = useState(0);
+  // When the user explicitly dismisses (Esc / blur / pick), suppress reopening
+  // until they delete the leading `/` and retype it.
+  const [slashSuppressed, setSlashSuppressed] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -338,8 +355,60 @@ export function Thread({ messages, isStreaming, onSend, audio }: ThreadProps) {
     }
   }, [messages]);
 
+  // Slash menu state derived from the current input. The menu opens when the
+  // input begins with a single leading `/` (no whitespace) and isn't a
+  // multi-line value — matching how Claude Code / Cursor present commands.
+  const slashQuery = useMemo(() => {
+    if (slashSuppressed) return null;
+    if (!skills || skills.length === 0) return null;
+    if (!input.startsWith("/")) return null;
+    // A space ends the command — once the user has typed args, the menu
+    // closes so it doesn't obscure the rest of the message.
+    if (input.includes(" ") || input.includes("\n")) return null;
+    return input.slice(1).toLowerCase();
+  }, [input, skills, slashSuppressed]);
+
+  const filteredSkills = useMemo(() => {
+    if (slashQuery === null) return [];
+    if (slashQuery === "") return skills ?? [];
+    return (skills ?? []).filter((s) =>
+      s.name.toLowerCase().includes(slashQuery),
+    );
+  }, [skills, slashQuery]);
+
+  const slashOpen = filteredSkills.length > 0;
+
+  // Reset selection when the filter changes so the highlight doesn't point
+  // past the end of the visible list.
+  useEffect(() => {
+    setSlashHighlightedIndex(0);
+  }, [slashQuery]);
+
+  // Clear the suppression flag once the leading `/` is gone — typing it again
+  // should reopen the menu.
+  useEffect(() => {
+    if (!input.startsWith("/") && slashSuppressed) {
+      setSlashSuppressed(false);
+    }
+  }, [input, slashSuppressed]);
+
+  const selectSkill = (skill: Skill) => {
+    setInput("");
+    setSlashSuppressed(true);
+    isStickyRef.current = true;
+    setShowScrollButton(false);
+    onInvokeSkill?.(skill.name, "");
+  };
+
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
+    if (slashOpen) {
+      // Enter on an open menu picks the highlighted skill rather than
+      // submitting the literal text.
+      const picked = filteredSkills[slashHighlightedIndex];
+      if (picked) selectSkill(picked);
+      return;
+    }
     const text = input.trim();
     if (!text || isStreaming) return;
     setInput("");
@@ -357,6 +426,33 @@ export function Thread({ messages, isStreaming, onSend, audio }: ThreadProps) {
   }, [input]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Slash menu navigation. We only intercept arrows / Esc when the menu is
+    // open so the textarea retains normal cursor movement otherwise.
+    if (slashOpen) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashHighlightedIndex((i) => (i + 1) % filteredSkills.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashHighlightedIndex(
+          (i) => (i - 1 + filteredSkills.length) % filteredSkills.length,
+        );
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const picked = filteredSkills[slashHighlightedIndex];
+        if (picked) selectSkill(picked);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlashSuppressed(true);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -422,6 +518,15 @@ export function Thread({ messages, isStreaming, onSend, audio }: ThreadProps) {
                   : "border-border focus-within:border-primary"
             }`}
           >
+            {slashOpen && (
+              <SlashCommandMenu
+                skills={filteredSkills}
+                highlightedIndex={slashHighlightedIndex}
+                onHover={setSlashHighlightedIndex}
+                onSelect={selectSkill}
+                onClose={() => setSlashSuppressed(true)}
+              />
+            )}
             {isListening || isRecording ? (
               <div className="flex items-center justify-center gap-3 px-3 py-2 min-h-[72px]">
                 {isRecording ? (
@@ -449,7 +554,11 @@ export function Thread({ messages, isStreaming, onSend, audio }: ThreadProps) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Send a message..."
+                placeholder={
+                  skills && skills.length > 0
+                    ? "Send a message, / for commands"
+                    : "Send a message..."
+                }
                 rows={1}
                 maxLength={MAX_MESSAGE_LENGTH}
                 className="w-full bg-transparent px-3 py-2 text-foreground placeholder:text-muted-foreground resize-none outline-none text-sm min-h-[72px] max-h-[200px]"

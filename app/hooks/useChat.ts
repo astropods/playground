@@ -527,6 +527,54 @@ export function useChat({ apiUrl, onError }: UseChatOptions) {
     [apiUrl, conversationId, createConversation, finalizeAssistant, isStreaming, setupEventSource],
   );
 
+  // Public: invoke a slash command. Mirrors sendText but POSTs to the
+  // invocations endpoint so the server forwards a typed SkillInvocation to
+  // the agent rather than a free-text message. The user bubble shows
+  // `/skill args` for visual continuity with the chat transcript.
+  const sendSkill = useCallback(
+    async (name: string, args: string) => {
+      if (isStreaming) return;
+      const display = args ? `/${name} ${args}` : `/${name}`;
+      const now = Date.now();
+      const userMessage: Message = {
+        id: generateId(),
+        role: "user",
+        content: display,
+        parts: [{ type: "text", content: display }],
+        timestamp: now,
+      };
+      const assistantMessageId = generateId();
+      const assistantMessage: Message = {
+        id: assistantMessageId,
+        role: "assistant",
+        content: "",
+        parts: [],
+        isStreaming: true,
+        timestamp: now,
+      };
+      setMessages((prev) => [...prev, userMessage, assistantMessage]);
+      setIsStreaming(true);
+
+      try {
+        let convId = conversationId;
+        if (!convId) {
+          convId = await createConversation();
+          setConversationId(convId);
+        }
+        setupEventSource(convId, assistantMessageId);
+        await request(`${apiUrl}/api/conversations/${convId}/invocations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ skill: name, args }),
+        });
+      } catch (error) {
+        const userMsg = userMessageForError(error);
+        finalizeAssistant(assistantMessageId, { errorText: userMsg });
+      }
+    },
+    [apiUrl, conversationId, createConversation, finalizeAssistant, isStreaming, setupEventSource],
+  );
+
   const registerPendingUserMsgIdGetter = useCallback(
     (fn: (() => string | null) | null) => {
       pendingUserMsgIdGetterRef.current = fn;
@@ -543,6 +591,7 @@ export function useChat({ apiUrl, onError }: UseChatOptions) {
     conversationId,
     setConversationId,
     sendText,
+    sendSkill,
     createConversation,
     setupEventSource,
     registerPendingUserMsgIdGetter,

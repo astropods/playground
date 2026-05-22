@@ -28,6 +28,7 @@ import astroLogo from "./astro-logo.svg";
 import astroLogoDark from "./astro-logo-dark.svg";
 import { useAudio } from "./hooks/useAudio";
 import { useChat } from "./hooks/useChat";
+import { useSkills } from "./hooks/useSkills";
 import { TooltipProvider } from "./Tooltip";
 import { Thread } from "./components/Thread";
 import {
@@ -438,6 +439,7 @@ export default function App() {
     conversationId,
     setConversationId,
     sendText,
+    sendSkill,
     createConversation,
     setupEventSource,
     registerPendingUserMsgIdGetter,
@@ -479,6 +481,8 @@ export default function App() {
     };
     fetchConfig();
   }, []);
+
+  const { skills } = useSkills(API_URL);
 
   const audio = useAudio({
     conversationId,
@@ -552,6 +556,11 @@ export default function App() {
             onSend={(text) => {
               setErrorBanner(null);
               sendText(text);
+            }}
+            skills={skills}
+            onInvokeSkill={(name, args) => {
+              setErrorBanner(null);
+              sendSkill(name, args);
             }}
             audio={{
               isListening: audio.isListening,

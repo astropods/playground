@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Settings2,
   FileText,
+  Slash,
   Sun,
   Moon,
 } from "lucide-react";
@@ -28,7 +29,7 @@ import astroLogo from "./astro-logo.svg";
 import astroLogoDark from "./astro-logo-dark.svg";
 import { useAudio } from "./hooks/useAudio";
 import { useChat } from "./hooks/useChat";
-import { useSkills } from "./hooks/useSkills";
+import { useSkills, type Skill } from "./hooks/useSkills";
 import { TooltipProvider } from "./Tooltip";
 import { Thread } from "./components/Thread";
 import {
@@ -317,11 +318,36 @@ function ToolCard({ tool }: { tool: ToolConfig }) {
   );
 }
 
+function SkillCard({ skill }: { skill: Skill }) {
+  return (
+    <div className="bg-card rounded-lg border border-border p-3">
+      <div className="flex items-start gap-3">
+        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
+          <Slash className="w-4 h-4 text-primary-foreground" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-medium text-foreground font-mono">/{skill.name}</h4>
+          <p className="text-xs text-muted-foreground mt-1">
+            {skill.description || "No description"}
+          </p>
+          {skill.longDescription && (
+            <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+              {skill.longDescription}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AgentConfigView({
   config,
+  skills,
   isLoading,
 }: {
   config: AgentConfig | null;
+  skills: Skill[];
   isLoading: boolean;
 }) {
   if (isLoading) {
@@ -331,7 +357,7 @@ function AgentConfigView({
       </div>
     );
   }
-  if (!config) {
+  if (!config && skills.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground">
         No configuration available
@@ -341,37 +367,59 @@ function AgentConfigView({
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
       <div className="max-w-3xl mx-auto space-y-6">
-        <div className="bg-muted border border-border rounded-xl overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 bg-card border-b border-border">
-            <FileText className="w-4 h-4 text-muted-foreground" />
-            <h3 className="text-sm font-medium text-foreground">System Prompt</h3>
+        {config && (
+          <div className="bg-muted border border-border rounded-xl overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 bg-card border-b border-border">
+              <FileText className="w-4 h-4 text-muted-foreground" />
+              <h3 className="text-sm font-medium text-foreground">System Prompt</h3>
+            </div>
+            <div className="p-4">
+              <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                {config.systemPrompt || "No system prompt configured"}
+              </p>
+            </div>
           </div>
-          <div className="p-4">
-            <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
-              {config.systemPrompt || "No system prompt configured"}
-            </p>
+        )}
+        {config && (
+          <div className="bg-muted border border-border rounded-xl overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 bg-card border-b border-border">
+              <Wrench className="w-4 h-4 text-muted-foreground" />
+              <h3 className="text-sm font-medium text-foreground">Available Tools</h3>
+              <span className="ml-auto text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full font-mono">
+                {config.tools.length} tool{config.tools.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+            <div className="p-4">
+              {config.tools.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No tools configured</p>
+              ) : (
+                <div className="space-y-3">
+                  {config.tools.map((tool, index) => (
+                    <ToolCard key={index} tool={tool} />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-        <div className="bg-muted border border-border rounded-xl overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 bg-card border-b border-border">
-            <Wrench className="w-4 h-4 text-muted-foreground" />
-            <h3 className="text-sm font-medium text-foreground">Available Tools</h3>
-            <span className="ml-auto text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full font-mono">
-              {config.tools.length} tool{config.tools.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-          <div className="p-4">
-            {config.tools.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No tools configured</p>
-            ) : (
+        )}
+        {skills.length > 0 && (
+          <div className="bg-muted border border-border rounded-xl overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 bg-card border-b border-border">
+              <Slash className="w-4 h-4 text-muted-foreground" />
+              <h3 className="text-sm font-medium text-foreground">Available Skills</h3>
+              <span className="ml-auto text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full font-mono">
+                {skills.length} skill{skills.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+            <div className="p-4">
               <div className="space-y-3">
-                {config.tools.map((tool, index) => (
-                  <ToolCard key={index} tool={tool} />
+                {skills.map((skill) => (
+                  <SkillCard key={skill.name} skill={skill} />
                 ))}
               </div>
-            )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -548,7 +596,7 @@ export default function App() {
         )}
 
         {viewMode === "config" ? (
-          <AgentConfigView config={agentConfig} isLoading={isLoadingConfig} />
+          <AgentConfigView config={agentConfig} skills={skills} isLoading={isLoadingConfig} />
         ) : (
           <Thread
             messages={messages}

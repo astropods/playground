@@ -24,6 +24,9 @@ function mockFetch(overrides?: {
   configError?: number;
   conversations?: EndpointResult;
   messages?: EndpointResult;
+  // null = endpoint returns 404 (no skills configured); array = list returned.
+  skills?: Array<{ name: string; description: string; longDescription?: string }> | null;
+  invocations?: EndpointResult;
 }) {
   const health = overrides?.health ?? { ok: true };
   const config =
@@ -36,6 +39,8 @@ function mockFetch(overrides?: {
   const configError = overrides?.configError;
   const conversations = overrides?.conversations ?? { ok: true };
   const messages = overrides?.messages ?? { ok: true };
+  const skills = overrides && "skills" in overrides ? overrides.skills : null;
+  const invocations = overrides?.invocations ?? { ok: true };
 
   vi.stubGlobal(
     "fetch",
@@ -63,6 +68,17 @@ function mockFetch(overrides?: {
         if (!messages.ok)
           return Promise.resolve(jsonResponse(messages.body ?? {}, messages.status));
         return Promise.resolve(jsonResponse({}));
+      }
+      if (url.endsWith("/api/skills")) {
+        if (skills === null) return Promise.resolve(jsonResponse({}, 404));
+        return Promise.resolve(jsonResponse({ skills }));
+      }
+      if (url.includes("/api/conversations/") && url.endsWith("/invocations") && init?.method === "POST") {
+        if (!invocations.ok && invocations.status === undefined)
+          return Promise.reject(new Error("Failed to invoke skill"));
+        if (!invocations.ok)
+          return Promise.resolve(jsonResponse(invocations.body ?? {}, invocations.status));
+        return Promise.resolve(jsonResponse({}, 202));
       }
       return Promise.resolve(jsonResponse({}));
     }),
@@ -696,5 +712,85 @@ describe("Theme localStorage persistence", () => {
     await user.click(toggle);
 
     expect(localStorage.getItem("theme")).toBe("light");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slash command menu
+// ---------------------------------------------------------------------------
+describe("Slash command menu", () => {
+  const sampleSkills = [
+    { name: "agent-card", description: "Create or update AGENT.md files", longDescription: "Long help" },
+    { name: "review", description: "Review a PR" },
+  ];
+
+  it("opens with matching skills when the user types '/'", async () => {
+    const user = userEvent.setup();
+    mockFetch({ skills: sampleSkills });
+    render(<App />);
+
+    const textarea = await screen.findByPlaceholderText(/Send a message, \/ for commands/);
+    await user.click(textarea);
+    await user.keyboard("/");
+
+    const list = await screen.findByRole("listbox", { name: "Skills" });
+    expect(list).toBeInTheDocument();
+    expect(screen.getByText("/agent-card")).toBeInTheDocument();
+    expect(screen.getByText("/review")).toBeInTheDocument();
+  });
+
+  it("filters the list as the user types after the slash", async () => {
+    const user = userEvent.setup();
+    mockFetch({ skills: sampleSkills });
+    render(<App />);
+
+    const textarea = await screen.findByPlaceholderText(/Send a message, \/ for commands/);
+    await user.click(textarea);
+    await user.keyboard("/rev");
+
+    await screen.findByRole("listbox", { name: "Skills" });
+    expect(screen.getByText("/review")).toBeInTheDocument();
+    expect(screen.queryByText("/agent-card")).not.toBeInTheDocument();
+  });
+
+  it("Enter on a selection POSTs to /invocations and renders the user bubble", async () => {
+    const user = userEvent.setup();
+    mockFetch({ skills: sampleSkills });
+    render(<App />);
+
+    const textarea = await screen.findByPlaceholderText(/Send a message, \/ for commands/);
+    await user.click(textarea);
+    await user.keyboard("/review");
+    await screen.findByRole("listbox", { name: "Skills" });
+    await user.keyboard("{Enter}");
+
+    // User bubble appears with the canonical /skill display.
+    await waitFor(() => {
+      expect(screen.getByText("/review")).toBeInTheDocument();
+    });
+
+    // POST went to the invocations endpoint with the expected payload.
+    await waitFor(() => {
+      const fetchMock = vi.mocked(globalThis.fetch);
+      const invocation = fetchMock.mock.calls.find(([url, init]) => {
+        return (
+          typeof url === "string" &&
+          url.includes("/api/conversations/") &&
+          url.endsWith("/invocations") &&
+          (init as RequestInit | undefined)?.method === "POST"
+        );
+      });
+      expect(invocation).toBeDefined();
+      const body = JSON.parse((invocation?.[1] as RequestInit).body as string);
+      expect(body).toEqual({ skill: "review", args: "" });
+    });
+  });
+
+  it("does not render the slash hint when no skills are advertised", async () => {
+    mockFetch({ skills: null }); // 404
+    render(<App />);
+
+    await screen.findByText("Agent Playground");
+    expect(screen.getByPlaceholderText("Send a message...")).toBeInTheDocument();
   });
 });

@@ -11,6 +11,13 @@ import { mermaid } from "@streamdown/mermaid";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip";
 import type { Message, ToolCallPart } from "../hooks/useChat";
 import { ToolStrip } from "./ToolStrip";
+import {
+  AttachButton,
+  AttachmentChip,
+  AttachmentPill,
+  FileAttachModal,
+  type FileAttachment,
+} from "./FileAttachment";
 import playgroundIllustration from "../playground-empty-state.svg";
 import playgroundIllustrationDark from "../playground-empty-state-dark.svg";
 
@@ -214,10 +221,19 @@ function UserMessage({ message }: { message: Message }) {
     message.inputModality === "audio" &&
     (message.content === "[Listening...]" || message.content === "[Voice message]");
   const formattedTs = formatTimestamp(message.timestamp);
+  const hasFiles = !!message.files?.length;
+  const hasContent = message.content.length > 0;
 
   return (
     <div className="flex flex-col items-end max-w-[85%] ml-auto">
-      <div className="rounded-2xl px-4 py-3 text-sm leading-relaxed bg-slate-200 dark:bg-slate-800 text-foreground whitespace-pre-wrap">
+      <div className="rounded-2xl px-4 py-3 text-sm leading-relaxed bg-slate-200 dark:bg-slate-800 text-foreground whitespace-pre-wrap space-y-2">
+        {hasFiles && (
+          <div className="flex flex-col items-stretch gap-1.5">
+            {message.files!.map((f, i) => (
+              <AttachmentChip key={i} attachment={f} />
+            ))}
+          </div>
+        )}
         {isAudioPlaceholder ? (
           <div className="flex items-center gap-2 text-muted-foreground">
             <Mic className="w-4 h-4" />
@@ -230,9 +246,9 @@ function UserMessage({ message }: { message: Message }) {
             <Mic className="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground" />
             <span>{message.content}</span>
           </div>
-        ) : (
+        ) : hasContent ? (
           message.content
-        )}
+        ) : null}
       </div>
       {formattedTs && (
         <span className="mt-1 text-xs text-muted-foreground">{formattedTs}</span>
@@ -244,7 +260,7 @@ function UserMessage({ message }: { message: Message }) {
 export type ThreadProps = {
   messages: Message[];
   isStreaming: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string, files?: FileAttachment[]) => void;
   // Audio controls — optional so the Thread is usable without voice.
   audio?: {
     isListening: boolean;
@@ -258,6 +274,8 @@ export type ThreadProps = {
 
 export function Thread({ messages, isStreaming, onSend, audio }: ThreadProps) {
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+  const [attachOpen, setAttachOpen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -340,12 +358,15 @@ export function Thread({ messages, isStreaming, onSend, audio }: ThreadProps) {
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
+    if (isStreaming) return;
     const text = input.trim();
-    if (!text || isStreaming) return;
+    if (!text && attachments.length === 0) return;
     setInput("");
+    const files = attachments.length > 0 ? attachments : undefined;
+    setAttachments([]);
     isStickyRef.current = true;
     setShowScrollButton(false);
-    onSend(text);
+    onSend(text, files);
   };
 
   // Auto-grow the textarea up to a reasonable cap.
@@ -444,19 +465,40 @@ export function Thread({ messages, isStreaming, onSend, audio }: ThreadProps) {
                 )}
               </div>
             ) : (
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Send a message..."
-                rows={1}
-                maxLength={MAX_MESSAGE_LENGTH}
-                className="w-full bg-transparent px-3 py-2 text-foreground placeholder:text-muted-foreground resize-none outline-none text-sm min-h-[72px] max-h-[200px]"
-                style={{ height: "72px" }}
-              />
+              <>
+                {attachments.length > 0 && (
+                  <div className="px-1 pt-1 flex flex-col gap-1.5">
+                    {attachments.map((a, i) => (
+                      <AttachmentPill
+                        key={`${a.name}-${i}`}
+                        attachment={a}
+                        onRemove={() =>
+                          setAttachments((prev) => prev.filter((_, j) => j !== i))
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Send a message..."
+                  rows={1}
+                  maxLength={MAX_MESSAGE_LENGTH}
+                  className="w-full bg-transparent px-3 py-2 text-foreground placeholder:text-muted-foreground resize-none outline-none text-sm min-h-[72px] max-h-[200px]"
+                  style={{ height: "72px" }}
+                />
+              </>
             )}
             <div className="flex items-center justify-end gap-2">
+              {!(isListening || isRecording) && (
+                <AttachButton
+                  onClick={() => setAttachOpen(true)}
+                  disabled={isStreaming}
+                />
+              )}
               {audio && (
                 <div className="relative">
                   <button
@@ -509,7 +551,7 @@ export function Thread({ messages, isStreaming, onSend, audio }: ThreadProps) {
               {!(isListening || isRecording) && (
                 <button
                   type="submit"
-                  disabled={!input.trim() || isStreaming}
+                  disabled={(!input.trim() && attachments.length === 0) || isStreaming}
                   className="shrink-0 w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 transition-all duration-200"
                 >
                   {isStreaming ? (
@@ -538,6 +580,12 @@ export function Thread({ messages, isStreaming, onSend, audio }: ThreadProps) {
           </p>
         </form>
       </div>
+
+      <FileAttachModal
+        open={attachOpen}
+        onOpenChange={setAttachOpen}
+        onAttach={(added) => setAttachments((prev) => [...prev, ...added])}
+      />
     </>
   );
 }

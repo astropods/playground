@@ -19,6 +19,16 @@ export type ToolCallPart = {
 
 export type MessagePart = TextPart | ToolCallPart;
 
+export type MessageFile = {
+  name: string;
+  type: string;
+  data: string;
+  isBase64Encoded: boolean;
+  // Display-only — server doesn't need it but we keep it on the local Message
+  // so the user bubble can show the size next to the filename.
+  size?: number;
+};
+
 export type Message = {
   id: string;
   role: "user" | "assistant";
@@ -28,6 +38,7 @@ export type Message = {
   isStreaming?: boolean;
   inputModality?: "text" | "audio";
   timestamp: number;
+  files?: MessageFile[];
 };
 
 // Smoothing factor: each frame, advance this fraction of the remaining buffer.
@@ -483,7 +494,7 @@ export function useChat({ apiUrl, onError }: UseChatOptions) {
 
   // Public: send a text message. Creates the conversation if needed.
   const sendText = useCallback(
-    async (content: string) => {
+    async (content: string, files?: MessageFile[]) => {
       if (isStreaming) return;
       const now = Date.now();
       const userMessage: Message = {
@@ -492,6 +503,7 @@ export function useChat({ apiUrl, onError }: UseChatOptions) {
         content,
         parts: [{ type: "text", content }],
         timestamp: now,
+        files: files && files.length > 0 ? files : undefined,
       };
       const assistantMessageId = generateId();
       const assistantMessage: Message = {
@@ -505,6 +517,9 @@ export function useChat({ apiUrl, onError }: UseChatOptions) {
       setMessages((prev) => [...prev, userMessage, assistantMessage]);
       setIsStreaming(true);
 
+      // Strip `size` from the wire payload — it's a UI-only field.
+      const wireFiles = files?.map(({ size: _omit, ...rest }) => rest);
+
       try {
         let convId = conversationId;
         if (!convId) {
@@ -515,7 +530,9 @@ export function useChat({ apiUrl, onError }: UseChatOptions) {
         await request(`${apiUrl}/api/conversations/${convId}/messages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content }),
+          body: JSON.stringify(
+            wireFiles && wireFiles.length > 0 ? { content, files: wireFiles } : { content },
+          ),
         });
       } catch (error) {
         // Send-path errors render inside the assistant bubble that's already on

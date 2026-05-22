@@ -559,6 +559,29 @@ export function devAgentPlugin(): Plugin {
 
             const body = await parseBody(req);
             const content = body.content as string;
+            const files = Array.isArray(body.files)
+              ? (body.files as Array<{
+                  name?: string;
+                  type?: string;
+                  data?: string;
+                  isBase64Encoded?: boolean;
+                }>)
+              : [];
+
+            // Prepend an attachment ack to the prompt so the canned scenarios
+            // visibly react to the file the user attached.
+            const attachmentSummary = files.length
+              ? `Received ${files.length} attachment${files.length > 1 ? "s" : ""}: ` +
+                files
+                  .map(
+                    (f) =>
+                      `**${f.name ?? "unnamed"}** (${f.type || "application/octet-stream"}, ${
+                        f.isBase64Encoded ? "base64" : "text"
+                      }, ${typeof f.data === "string" ? f.data.length : 0} chars).`,
+                  )
+                  .join(" ") +
+                "\n\n"
+              : "";
 
             convo.messages.push({ role: "user", content });
             json(res, 200, { ok: true });
@@ -578,8 +601,14 @@ export function devAgentPlugin(): Plugin {
               convo.emitter.emit("sse", { event, data });
 
             try {
+              if (attachmentSummary) {
+                await streamText(emit, attachmentSummary, 24, 12);
+              }
               const reply = await streamDummyReply(emit, content);
-              convo.messages.push({ role: "assistant", content: reply });
+              convo.messages.push({
+                role: "assistant",
+                content: attachmentSummary + reply,
+              });
             } catch (err: unknown) {
               const message =
                 err instanceof Error ? err.message : "Stream failed";

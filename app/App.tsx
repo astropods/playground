@@ -549,9 +549,9 @@ export default function App() {
           <Thread
             messages={messages}
             isStreaming={isStreaming}
-            onSend={(text) => {
+            onSend={(text, files) => {
               setErrorBanner(null);
-              sendText(text);
+              sendText(text, files);
             }}
             audio={{
               isListening: audio.isListening,

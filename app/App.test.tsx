@@ -676,6 +676,241 @@ describe("Error banner", () => {
 });
 
 // ---------------------------------------------------------------------------
+// File attachments — the paperclip opens a Radix Dialog with a hidden file
+// input. Tests below drive the input directly (uploading via userEvent), then
+// assert on the pill in the compose area, the chip in the user bubble, and
+// the JSON body sent to /messages.
+// ---------------------------------------------------------------------------
+describe("File attachments", () => {
+  // Find the file input rendered inside the modal's Radix Portal. It's hidden
+  // visually but present in the DOM once the dialog is open.
+  function fileInput(): HTMLInputElement {
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    if (!input) throw new Error("file input not mounted");
+    return input;
+  }
+
+  async function openAttachModal(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: "Attach file" }));
+    await waitFor(() => expect(fileInput()).toBeInTheDocument());
+  }
+
+  it("paperclip button is present in the compose row when not streaming", async () => {
+    mockFetch();
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Attach file" })).toBeEnabled();
+  });
+
+  it("attaching a text file shows a pill, sends `files` in the POST body, then clears the pill", async () => {
+    const user = userEvent.setup();
+    mockFetch();
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
+    });
+
+    await openAttachModal(user);
+    const file = new File(["hello, world"], "notes.txt", { type: "text/plain" });
+    await act(async () => {
+      await user.upload(fileInput(), file);
+    });
+
+    // Pill appears above the textarea with filename + size.
+    await waitFor(() => expect(screen.getByText("notes.txt")).toBeInTheDocument());
+    expect(screen.getByText("12 B")).toBeInTheDocument();
+
+    // Submit enables on attachment alone (no text needed).
+    const textarea = screen.getByPlaceholderText("Send a message...");
+    const submit = textarea.closest("form")!.querySelector('button[type="submit"]') as HTMLButtonElement;
+    expect(submit).not.toBeDisabled();
+
+    await user.click(submit);
+    await waitFor(() => expect(MockEventSource.latest).not.toBeNull());
+
+    // POST .../messages body contains files with the expected shape.
+    const calls = vi.mocked(globalThis.fetch).mock.calls;
+    const msg = calls.find(
+      ([url, init]) =>
+        typeof url === "string" &&
+        url.includes("/api/conversations/test-conv-123/messages") &&
+        init?.method === "POST",
+    );
+    expect(msg).toBeDefined();
+    const body = JSON.parse(msg![1]!.body as string);
+    expect(body.content).toBe("");
+    expect(body.files).toEqual([
+      {
+        name: "notes.txt",
+        type: "text/plain",
+        data: "hello, world",
+        isBase64Encoded: false,
+      },
+    ]);
+    // Display-only `size` must not leak into the wire payload.
+    expect(body.files[0].size).toBeUndefined();
+
+    // Pill clears after send (the chip in the user bubble still says the
+    // filename, so check for the remove button which is unique to the pill).
+    expect(screen.queryByRole("button", { name: /remove notes.txt/i })).not.toBeInTheDocument();
+  });
+
+  it("attaches a binary file as base64", async () => {
+    const user = userEvent.setup();
+    mockFetch();
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
+    });
+
+    await openAttachModal(user);
+    // 4 bytes 'PNG\0' — picks the binary path via image/png MIME.
+    const bytes = new Uint8Array([0x50, 0x4e, 0x47, 0x00]);
+    const file = new File([bytes], "icon.png", { type: "image/png" });
+    await act(async () => {
+      await user.upload(fileInput(), file);
+    });
+
+    await waitFor(() => expect(screen.getByText("icon.png")).toBeInTheDocument());
+
+    const textarea = screen.getByPlaceholderText("Send a message...");
+    await user.type(textarea, "look at this");
+    await user.click(textarea.closest("form")!.querySelector('button[type="submit"]')!);
+    await waitFor(() => expect(MockEventSource.latest).not.toBeNull());
+
+    const msg = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.find(
+        ([url, init]) =>
+          typeof url === "string" &&
+          url.includes("/messages") &&
+          init?.method === "POST",
+      )!;
+    const body = JSON.parse(msg[1]!.body as string);
+    expect(body.content).toBe("look at this");
+    expect(body.files[0]).toEqual({
+      name: "icon.png",
+      type: "image/png",
+      data: "UE5HAA==", // btoa("PNG\0")
+      isBase64Encoded: true,
+    });
+  });
+
+  it("X on the pill removes the attachment without sending", async () => {
+    const user = userEvent.setup();
+    mockFetch();
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
+    });
+
+    await openAttachModal(user);
+    const file = new File(["x"], "drop.txt", { type: "text/plain" });
+    await act(async () => {
+      await user.upload(fileInput(), file);
+    });
+
+    await waitFor(() => expect(screen.getByText("drop.txt")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: /remove drop.txt/i }));
+    expect(screen.queryByText("drop.txt")).not.toBeInTheDocument();
+
+    // With nothing attached and empty text, submit is disabled — no POST fires.
+    const textarea = screen.getByPlaceholderText("Send a message...");
+    const submit = textarea.closest("form")!.querySelector('button[type="submit"]')!;
+    expect(submit).toBeDisabled();
+  });
+
+  it("supports stacking multiple files across separate modal opens", async () => {
+    const user = userEvent.setup();
+    mockFetch();
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
+    });
+
+    await openAttachModal(user);
+    await act(async () => {
+      await user.upload(
+        fileInput(),
+        new File(["a"], "one.txt", { type: "text/plain" }),
+      );
+    });
+    await waitFor(() => expect(screen.getByText("one.txt")).toBeInTheDocument());
+
+    // Open again, attach a second. The first pill must still be there.
+    await openAttachModal(user);
+    await act(async () => {
+      await user.upload(
+        fileInput(),
+        new File(["bb"], "two.txt", { type: "text/plain" }),
+      );
+    });
+
+    await waitFor(() => expect(screen.getByText("two.txt")).toBeInTheDocument());
+    expect(screen.getByText("one.txt")).toBeInTheDocument();
+
+    const textarea = screen.getByPlaceholderText("Send a message...");
+    await user.click(textarea.closest("form")!.querySelector('button[type="submit"]')!);
+    await waitFor(() => expect(MockEventSource.latest).not.toBeNull());
+
+    const msg = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.find(
+        ([url, init]) =>
+          typeof url === "string" &&
+          url.includes("/messages") &&
+          init?.method === "POST",
+      )!;
+    const body = JSON.parse(msg[1]!.body as string);
+    expect(body.files).toHaveLength(2);
+    expect(body.files.map((f: { name: string }) => f.name)).toEqual(["one.txt", "two.txt"]);
+  });
+
+  it("renders an attachment chip inside the user bubble after sending", async () => {
+    const user = userEvent.setup();
+    mockFetch();
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByText("Agent Playground")).toBeInTheDocument();
+    });
+
+    await openAttachModal(user);
+    await act(async () => {
+      await user.upload(
+        fileInput(),
+        new File(["data"], "report.csv", { type: "text/csv" }),
+      );
+    });
+    await waitFor(() => expect(screen.getByText("report.csv")).toBeInTheDocument());
+
+    const textarea = screen.getByPlaceholderText("Send a message...");
+    await user.click(textarea.closest("form")!.querySelector('button[type="submit"]')!);
+    await waitFor(() => expect(MockEventSource.latest).not.toBeNull());
+
+    // The pill in the compose area is gone after send, but the chip in the
+    // user message bubble keeps the filename visible in history.
+    expect(screen.getByText("report.csv")).toBeInTheDocument();
+  });
+
+  it("omits files key when no attachments are present (back-compat with text-only handlers)", async () => {
+    await renderAndSendMessage("just text");
+    const msg = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.find(
+        ([url, init]) =>
+          typeof url === "string" &&
+          url.includes("/messages") &&
+          init?.method === "POST",
+      )!;
+    const body = JSON.parse(msg[1]!.body as string);
+    expect(body.content).toBe("just text");
+    expect("files" in body).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Theme localStorage persistence
 // ---------------------------------------------------------------------------
 describe("Theme localStorage persistence", () => {

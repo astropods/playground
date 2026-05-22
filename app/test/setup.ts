@@ -127,3 +127,27 @@ Object.defineProperty(window, "localStorage", { value: localStorageMock });
 
 // Mock scrollIntoView — not implemented in jsdom
 Element.prototype.scrollIntoView = vi.fn();
+
+// jsdom's Blob/File polyfill predates the modern async readers — `.text()` and
+// `.arrayBuffer()` aren't implemented, but our file-attachment code relies on
+// both. Polyfill them in terms of FileReader (which jsdom does ship).
+if (typeof Blob.prototype.text !== "function") {
+  Blob.prototype.text = function (this: Blob) {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ""));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(this);
+    });
+  };
+}
+if (typeof Blob.prototype.arrayBuffer !== "function") {
+  Blob.prototype.arrayBuffer = function (this: Blob) {
+    return new Promise<ArrayBuffer>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(this);
+    });
+  };
+}
